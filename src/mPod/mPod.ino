@@ -113,7 +113,7 @@ RotaryEncoder *scrollWheel = nullptr;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Files
-// Specifies intent of file acces is to create if necessary and open it
+// Specifies intent of file access is to just to create if necessary
 const char FILE_EXISTS = 'e'; 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,7 +127,7 @@ unsigned int catalogSpec[catalogSpecItems];
 const unsigned int catalogFileNameMaxLen = 16;
 char catalogCurrent[catalogFileNameMaxLen];
 char indexCurrent[catalogFileNameMaxLen];
-const char catalogDefault[] = "mPod";
+const char catalogDefault[] = ".mPod";
 const char catalogFileMaster[] = "catalog.t";
 const char catalogFileIndex[] = "catalog.x";
 const char catalogFileSortAlphaNum[] = "alphanum.x";
@@ -243,31 +243,7 @@ void loop() {
   catalogReset = false;
   // Player operation loop
   while (true) {
-    Serial.print("In main loop:\n\tPlaylist: ");
-    Serial.print(playlist);
-    Serial.print("\n\tLength: ");
-    Serial.print(catalogSpec[catalogSpecLength]);
-    Serial.print("\n\tTracks: ");
-    Serial.print(catalogSpec[catalogSpecItemCount]);
-    Serial.print("\n\tMax track length: ");
-    Serial.print(catalogSpec[catalogSpecItemMaxLength]);
-    Serial.print("\n\tMax track name length: ");
-    Serial.println(catalogSpec[catalogSpecItemNameMaxLength]);
-    for (int i=0; i<catalogSpec[catalogSpecItemCount]; i++) {
-      Serial.print("\t");
-      for (int j=0; j<playlistItem[i][catalogIndexFileNameLen]; j++) {
-        Serial.print(playlist[(j + playlistItem[i][catalogIndexFileNameStart])]);
-      }
-      Serial.print(" is a ");
-      for (int j=0; j<playlistItem[i][catalogIndexFileExtLen]; j++) {
-        Serial.print(playlist[(j + playlistItem[i][catalogIndexFileExtStart])]);
-      }
-      Serial.print(" in directory ");
-      for (int j=playlistItem[i][catalogIndexFileStart]; j<playlistItem[i][catalogIndexFileNameStart]; j++) {
-        Serial.print(playlist[j]);
-      }
-      Serial.print("\n");
-    }
+    catalogListSerial(catalogSpec, playlist, playlistItem);
     halt("Testing completed!", "TEST COMPLETE");
     if (catalogReset) {
       break;
@@ -615,13 +591,13 @@ bool catalogDirectoryExcluded(char *dir, unsigned int dirLen) {
   // Currently the hard-coded exclusions are max 8 chars
   char compare[8];
   for (unsigned int i=0; i<8; i++) {
-    if ((dir[i] == '/') || (dir[i] == '\0')) {
+    if ((i > 0 && dir[i] == '/') || (dir[i] == '\0')) {
       compare[i] = '\0';
     } else {
       compare[i] = dir[i];
     }
   }
-  if ((strcmp(compare, "/mPod") == 0) || (strcmp(compare, "/.Trash") == 0)) {
+  if ((strcmp(compare, "/.mPod") == 0) || (strcmp(compare, "/.Trash") == 0)) {
     retval = true;
   }
   return retval;
@@ -736,6 +712,31 @@ bool catalogGetSpecs(const char *catalogName, unsigned int *specs) {
   }
   spec.close();
   return retval;
+}
+
+void catalogListSerial(unsigned int *specs, char *playlist, unsigned int playlistItem[][catalogIndexItems]) {
+  Serial.println("----------------------------------------------------------------------");
+  Serial.print("Playlist: ");
+  if (strcmp(catalogCurrent, catalogDefault) == 0) {
+    Serial.print("Default");
+  } else {
+    Serial.print(catalogCurrent);
+  }
+  Serial.print(" (");
+  Serial.print(specs[catalogSpecItemCount]);
+  Serial.println(" files)");
+  for (int i=0; i<specs[catalogSpecItemCount]; i++) {
+    Serial.print("    ");
+    if (i<10) {
+      Serial.print(" ");
+    }
+    Serial.print(i);
+    Serial.print("    ");
+    for (int j=0; j<playlistItem[i][catalogIndexFileNameLen]; j++) {
+      Serial.print(playlist[(j + playlistItem[i][catalogIndexFileNameStart])]);
+    }
+    Serial.print("\n");
+  }
 }
 
 bool catalogLoadIndex(const char *catalogName, unsigned int *specs, unsigned int catalogItemDef[][catalogIndexItems]) {
@@ -892,6 +893,8 @@ void mPodInitialize() {
   mPod->useInterrupt(VS1053_DREQ); // allows for background audio playing
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Load catalog data for the currently selected playlist
 bool playlistFill(char *playlist, unsigned int playlistItem[][catalogIndexItems]) {
   bool retval = true;
   if (!catalogLoadMaster(catalogCurrent, catalogSpec, playlist)) {
@@ -906,6 +909,7 @@ bool playlistFill(char *playlist, unsigned int playlistItem[][catalogIndexItems]
   }
   return retval;
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 // Draws a font with background using specified boundaries and justification
 // Text is allowed to overflow out of the boundary. Passing a zero for hBound
