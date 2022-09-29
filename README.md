@@ -12,17 +12,19 @@ modeling and assembly skills I may (or may not) have. Enjoy.
 Copyright 2022 Christopher James Baker
 MIT License - https://opensource.org/licenses/MIT
 
-This code is specifically configured for the following hardware & libraries.
+This code is specifically configured for the following hardware.
 Please pay attention to any required changes you may need to make to the
 pinouts and library #includes should you attempt to use this code with other
-hardware or libraries.
-  Hardware
-    Adafruit ESP32 Feather V2 (MAIN BOARD)
-      https://www.adafruit.com/product/5400
-    Adafruit VS1053 Codec + MicroSD Breakout - v4
-      MP3, AAC, Ogg Vorbis, WMA, MIDI, FLAC, WAV Decoder
-      https://www.adafruit.com/product/1381
-    ANO Directional Navigation and Scroll Wheel Rotary Encoder
-      https://www.adafruit.com/product/5001
-    Adafruit 1.3" 240x240 Wide Angle TFT LCD Display with MicroSD - ST7789
-      https://www.adafruit.com/product/4313
+hardware.
+
+Adafruit ESP32 Feather V2 (MAIN BOARD)
+  https://www.adafruit.com/product/5400
+
+Adafruit VS1053 Codec + MicroSD Breakout - v4
+  https://www.adafruit.com/product/1381
+
+ANO Directional Navigation and Scroll Wheel Rotary Encoder
+  https://www.adafruit.com/product/5001
+
+Adafruit 1.3" 240x240 Wide Angle TFT LCD Display with MicroSD - ST7789
+  https://www.adafruit.com/product/4313
