@@ -460,28 +460,102 @@ bool catalogCreateSortIndexAlphanum(File sort, unsigned int *specs, char *source
       Serial.println(size);
       return false;
     }
-    Serial.print("Sort alphanum results:");
-    for (int i=0; i<specs[catalogSpecItemCount]; i++) {
-      Serial.print("\n\t");
-      for (int j=0; j<sourceIndex[sortedData[i]][catalogIndexFileNameLen]; j++) {
-        Serial.print(sourceData[(j + sourceIndex[sortedData[i]][catalogIndexFileNameStart])]);
-      }
-      Serial.print(" is a ");
-      for (int j=0; j<sourceIndex[sortedData[i]][catalogIndexFileExtLen]; j++) {
-        Serial.print(sourceData[(j + sourceIndex[sortedData[i]][catalogIndexFileExtStart])]);
-      }
-      Serial.print(" in directory ");
-      for (int j=sourceIndex[sortedData[i]][catalogIndexFileStart]; j<sourceIndex[sortedData[i]][catalogIndexFileNameStart]; j++) {
-        Serial.print(sourceData[j]);
-      }
-    }
-    Serial.print("\n");
   }
   return retval;
 }
 
 bool catalogCreateSortIndexLeadAlpha(File sort, unsigned int *specs, char *sourceData, unsigned int sourceIndex[][catalogIndexItems]) {
   bool retval = true;
+  unsigned int sortedData[specs[catalogSpecItemCount]];
+  bool sortAssigned[specs[catalogSpecItemCount]];
+  for (unsigned int i=0; i<specs[catalogSpecItemCount]; i++) {
+    sortAssigned[i] = false;
+  }
+  for (unsigned int i=0; i<specs[catalogSpecItemCount]; i++) {
+    char sourceItem[sourceIndex[i][catalogIndexFileNameLen] + 1];
+    catalogGetUpperDataBySizedRange(sourceItem, sourceIndex[i][catalogIndexFileNameStart], sourceIndex[i][catalogIndexFileNameLen], sourceData);
+    unsigned int sortedPos = 0;
+    unsigned int duplicates = 0;
+    for (unsigned int j=0; j<specs[catalogSpecItemCount]; j++) {
+      if (j != i) {
+        char targetItem[sourceIndex[j][catalogIndexFileNameLen] + 1];
+        catalogGetUpperDataBySizedRange(targetItem, sourceIndex[j][catalogIndexFileNameStart], sourceIndex[j][catalogIndexFileNameLen], sourceData);
+        int result = strcmpLeadAlpha(sourceItem, sourceIndex[i][catalogIndexFileNameLen] + 1, targetItem, sourceIndex[j][catalogIndexFileNameLen] + 1);
+        if (result >= 0) {
+          sortedPos++;
+        }
+        if (result == 0) {
+          duplicates++;
+        }
+      }
+    }
+    if (duplicates == 0) {
+      if (!sortAssigned[sortedPos]) {
+        sortedData[sortedPos] = i;
+        sortAssigned[sortedPos] = true;
+      } else {
+        Serial.print("ERROR: In catalogCreateSortIndexLeadAlpha; Attempted to assign source index ");
+        Serial.print(i);
+        Serial.print(" (");
+        Serial.print(sourceItem);
+        Serial.print(") to sort index ");
+        Serial.print(sortedPos);
+        Serial.print(" which has already been assigned value ");
+        Serial.print(sortedData[sortedPos]);
+        Serial.print("\n");
+        return false;
+      }
+    } else {
+      bool assigned = false;
+      for (unsigned int j=sortedPos-duplicates; j<sortedPos+1; j++) {
+        if (!sortAssigned[j]) {
+          sortedData[j] = i;
+          sortAssigned[j] = true;
+          assigned = true;
+          break;
+        }
+      }
+      if (!assigned) {
+        Serial.print("ERROR: In catalogCreateSortIndexLeadAlpha; Source index ");
+        Serial.print(i);
+        Serial.print(" (");
+        Serial.print(sourceItem);
+        Serial.print(") with ");
+        Serial.print(duplicates);
+        Serial.print(" duplicates, was unable to be assigned in the expected sort range ");
+        Serial.print(sortedPos-duplicates);
+        Serial.print(" to ");
+        Serial.print(sortedPos);
+        Serial.print(" because all values in the range have already been assigned\n");
+        return false;
+      }
+    }
+  }
+  bool sorted = true;
+  for (int i=0; i<specs[catalogSpecItemCount]; i++) {
+    if (!sortAssigned[i]) {
+      Serial.print("Sort index ");
+      Serial.print(i);
+      Serial.println(" was left unassigned after sort operation!");
+      sorted = false;
+    }
+  }
+  if (sorted) {
+    byte msb, lsb;
+    unsigned int size = 0;
+    for (int i=0; i<specs[catalogSpecItemCount]; i++) {
+      setBytesFromUint(sortedData[i], &msb, &lsb);
+      size += sort.write(msb);
+      size += sort.write(lsb);
+    }
+    if (size != (specs[catalogSpecItemCount] * 2)) {
+      Serial.print("Error in catalogCreateSortIndexLeadAlpha: Expected size of sort file was ");
+      Serial.print(specs[catalogSpecItemCount] * 2);
+      Serial.print(" but actual number of bytes written was ");
+      Serial.println(size);
+      return false;
+    }
+  }
   return retval;
 }
 
@@ -938,4 +1012,61 @@ void scrollWheelChange() {
 void setBytesFromUint(unsigned int val, byte *msb, byte *lsb) {
   *lsb = val & 0xFF;
   *msb = val >> 8;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Determines if source is greater than, less than, or equal to the target based
+// on the characters from the first alpha char onwards. Items with no alpha
+// chars at all are placed at the end in character code order.
+// I made this since I don't know of an existing C/C++ function that does this
+int strcmpLeadAlpha(char *source, unsigned int sourceLen, char *target, unsigned int targetLen) {
+  int retval = 0;
+  bool sourceHasChar = false;
+  unsigned int sourceCharAt;
+  bool targetHasChar = false;
+  unsigned int targetCharAt;
+  for (int i=0; i<sourceLen; i++) {
+    if (isalpha(source[i])) {
+      sourceHasChar = true;
+      sourceCharAt = i;
+      break;
+    }
+  }
+  for (int i=0; i<targetLen; i++) {
+    if (isalpha(target[i])) {
+      targetHasChar = true;
+      targetCharAt = i;
+      break;
+    }
+  }
+  if (!sourceHasChar && !targetHasChar) {
+    return strcmp(source, target);
+  }
+  if (sourceHasChar && !targetHasChar) {
+    return -1;
+  }
+  if (!sourceHasChar && targetHasChar) {
+    return 1;
+  }
+  if (sourceCharAt == 0 && targetCharAt == 0) {
+    return strcmp(source, target);
+  }
+  for (int i=0; i<sourceLen-sourceCharAt; i++) {
+    if (i >= targetLen-targetCharAt) {
+      // source is greater than because source has chars remaining
+      return 1;
+    }
+    if (source[(i+sourceCharAt)] > target[(i+targetCharAt)]) {
+      return 1;
+    }
+    if (source[(i+sourceCharAt)] < target[(i+targetCharAt)]) {
+      return -1;
+    }
+  }
+  // Check if source ran out of chars first
+  if ((sourceLen-sourceCharAt) < (targetLen-targetCharAt)) {
+    // source is less than since it ran out of chars first
+    return -1;
+  }
+  return retval;
 }
