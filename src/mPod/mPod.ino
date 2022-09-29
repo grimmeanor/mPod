@@ -169,12 +169,8 @@ void setup() {
   
   Serial.begin(serialBaudRate);
   while(!Serial);
-  Serial.println(F(
-    "\n--------------------------------------------------------------------------------"
-    "\n|                            Welcome to mPod v1.0                            |"
-    "\n--------------------------------------------------------------------------------\n"
-  ));
-
+  serialBanner("mPod Startup");
+  
   //----------------------------------------------------------------------------
   // Start Adafruit 1.3" 240x240 Wide Angle TFT LCD Display
   tftSPI = new SPIClass(HSPI);
@@ -227,6 +223,8 @@ void setup() {
   if (!catalogCreate(catalogDefault)) {
     halt(errCatalogCreateDirSerial, errCatalogCreateDirScreen);
   }
+  
+  serialBanner("Welcome to mPod v1.0");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -235,6 +233,7 @@ void loop() {
   // Load playlist from current catalog specs for player to use
   char playlist[catalogSpec[catalogSpecLength]];
   unsigned int playlistItem[catalogSpec[catalogSpecItemCount]][catalogIndexItems];
+  unsigned int playlistSort[catalogSpec[catalogSpecItemCount]];
   if (!playlistFill(playlist, playlistItem)) {
     // TODO: Some sort of error here
     Serial.println("Unable to load playlist from catalog!");
@@ -715,16 +714,21 @@ bool catalogGetSpecs(const char *catalogName, unsigned int *specs) {
 }
 
 void catalogListSerial(unsigned int *specs, char *playlist, unsigned int playlistItem[][catalogIndexItems]) {
-  Serial.println("----------------------------------------------------------------------");
-  Serial.print("Playlist: ");
-  if (strcmp(catalogCurrent, catalogDefault) == 0) {
-    Serial.print("Default");
-  } else {
-    Serial.print(catalogCurrent);
+  const unsigned int textFixedLen = 20;
+  const unsigned int filesLen = 6; // 2 byte unsigned integer max val is 5 digits
+  unsigned int catLen = 0;
+  while (catalogCurrent[catLen] != '\0') {
+    catLen++;
   }
-  Serial.print(" (");
-  Serial.print(specs[catalogSpecItemCount]);
-  Serial.println(" files)");
+  char fileDigits[filesLen];
+  int r = sprintf(fileDigits, "%1d", specs[catalogSpecItemCount]);
+  char bannerText[(textFixedLen + catLen + filesLen + 1)];
+  strcpy(bannerText, "Playlist: ");
+  strcat(bannerText, catalogCurrent);
+  strcat(bannerText, " (");
+  strcat(bannerText, fileDigits);
+  strcat(bannerText, " files)");
+  serialBanner(bannerText);
   for (int i=0; i<specs[catalogSpecItemCount]; i++) {
     Serial.print("    ");
     if (i<10) {
@@ -1009,6 +1013,37 @@ void screenShowWelcome() {
 // ISR for input changes on the scroll wheel
 void scrollWheelChange() {
   scrollWheel->tick();
+}
+
+void serialBanner(char *text) {
+  const unsigned int hCount = 80;
+  const char hChar = '-';
+  const unsigned int vCount = 2;
+  const char vChar = '|';
+  const char padChar = ' ';
+  unsigned int len=0;
+  while (text[len] != '\0') {
+    len++;
+  }
+  unsigned int leftPadding = (unsigned int)(((hCount - vCount) - len) / 2.0);
+  unsigned int rightPadding = hCount - (leftPadding+len) - vCount;
+  Serial.print("\n");
+  serialRepeatChar(hChar, hCount);
+  Serial.print("\n");
+  Serial.print(vChar);
+  serialRepeatChar(padChar, leftPadding);
+  Serial.print(text);
+  serialRepeatChar(padChar, rightPadding);
+  Serial.print(vChar);
+  Serial.print("\n");
+  serialRepeatChar(hChar, hCount);
+  Serial.print("\n");
+}
+
+void serialRepeatChar(char out, unsigned int count) {
+  for (int i=0; i<count; i++) {
+    Serial.print(out);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
