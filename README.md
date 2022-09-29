@@ -1,5 +1,5 @@
 # mPod
-This project is in prerelease and not a complete working product yet
+This project is in initial development and not a complete working product yet
 
 Portable music player with scroll wheel navigation and wired or wireless speaker connectivity
 
