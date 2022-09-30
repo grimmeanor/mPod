@@ -630,38 +630,6 @@ bool catalogDirectoryReady(char *dirName) {
   return retval;
 }
 
-unsigned int catalogGetPathLen(const char *dirName) {
-  unsigned int retval = 1 + getPathCharLen(playerDirectory); // room for trailing '/'
-  unsigned int len;
-  if (strcmp(dirName, catalogDefault) != 0) {
-    retval += (1 + getPathCharLen(catalogDefault)); // room for trailing '/'
-    // Will need to prepend catalogDefault path name
-    // len = 0;
-    // while (catalogDefault[len] != '\0') {
-    //   len++;
-    //   retval++;
-    // }
-    // retval += 1; // for '/' between catalogDefault and dirName
-  }
-  // len = 0;
-  // while (dirName[len] != '\0') {
-  //   len++;
-  //   retval++;
-  // }
-  // retval += 2; // Leading root '/' and ending term char
-  retval += getPathCharLen(dirName);
-  return retval;
-}
-
-void catalogGetPathName(char *buffer, unsigned int buffSize, const char *dirName) {
-  strcpy(buffer, "/");
-  strcat(buffer, catalogDefault);
-  if (strcmp(dirName, catalogDefault) != 0) {
-    strcat(buffer, "/");
-    strcat(buffer, dirName);
-  }
-}
-
 // Buffer must contain extra char after range for term char
 bool catalogGetDataByIndexedRange(char *buffer, unsigned int from, unsigned int to, char *data) {
   unsigned int length = to - from + 1;
@@ -793,9 +761,11 @@ File catalogOpenFile(const char *catalogName, const char *fileName, const char *
   File file;
   char newFileName[24]; // Max possible with 8.3 naming
   // Retrieve directory name for catalog
-  unsigned int dirLength = catalogGetPathLen(catalogName);
-  char dirName[(dirLength + 1)];
-  catalogGetPathName(dirName, dirLength, catalogName);
+  unsigned int dirLength = getCharLen(playerDirectory) + getCharLen(catalogName);
+  char dirName[(dirLength)];
+  strcpy(dirName, playerDirectory);
+  strcat(dirName, "/");
+  strcat(dirName, catalogName);
   // Validate working directory for catalog
   if (!catalogDirectoryReady(dirName)) {
     Serial.print(F("Unable to create/verify working directory "));
