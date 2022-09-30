@@ -127,6 +127,8 @@ unsigned int catalogSpec[catalogSpecItems];
 const unsigned int catalogFileNameMaxLen = 16;
 char catalogCurrent[catalogFileNameMaxLen];
 char indexCurrent[catalogFileNameMaxLen];
+const char playerDirectory[] = "/.mPod";
+const char playerFileSettings[] = "settings.s";
 const char catalogDefault[] = ".mPod";
 const char catalogFileMaster[] = "catalog.t";
 const char catalogFileIndex[] = "catalog.x";
@@ -217,6 +219,12 @@ void setup() {
   );
   attachInterrupt(digitalPinToInterrupt(ANO_ENCA), scrollWheelChange, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ANO_ENCB), scrollWheelChange, CHANGE);
+  
+  //----------------------------------------------------------------------------
+  // Load player settings
+  if (!playerSettingsLoad()) {
+    halt("Unable to load player settings from SD card", "SETTINGS LOAD ERROR");
+  }
   
   //----------------------------------------------------------------------------
   // Create music catalog
@@ -602,6 +610,7 @@ bool catalogDirectoryExcluded(char *dir, unsigned int dirLen) {
   return retval;
 }
 
+// DEPRECATED - use directoryReady instead
 bool catalogDirectoryReady(char *dirName) {
   bool retval = true;
   if (!SD.exists(dirName)) {
@@ -848,6 +857,51 @@ bool catalogSetSpecs(File spec, unsigned int *specs) {
   return retval;
 }
 
+bool directoryVerify(char *dirName) {
+  bool retval = true;
+  if (!SD.exists(dirName)) {
+    if (!SD.mkdir(dirName)) {
+      // TODO: Update these message strings
+      halt("Error creating player settings directory", "SETTINGS ERROR 0");
+    }
+  }
+  // Ensure the passed value is a directory
+  File dir = SD.open(dirName);
+  if (!dir) {
+    // TODO: Update these message strings
+    halt(errCatalogOpenDirSerial, errCatalogOpenDirScreen);
+  }
+  if (!dir.isDirectory()) {
+    retval = false;
+  }
+  dir.close();
+  return retval;
+}
+
+unsigned int getCharLen(const char *data) {
+  unsigned int retval = 0;
+  while (data[retval] != '\0') {
+    retval++;
+  }
+  return retval;
+}
+
+unsigned int getDirPathCharLen(const char *dir) {
+  unsigned int retval = 0;
+  if (dir[0] == '\0') {
+    return 1; // root dir '/'
+  }
+  if (dir[0] != '/') {
+    retval++; // will need extra char to prepend with root '/'
+  }
+  unsigned int len = getCharLen(dir);
+  retval += len;
+  if (dir[(len-1) != '/']) {
+    retval++; // will need extra char to append with term '/'
+  }
+  return retval;
+}
+
 unsigned int getUintFromBytes(byte msb, byte lsb) {
   unsigned int retval;
   retval = (unsigned int)msb;
@@ -895,6 +949,38 @@ void mPodInitialize() {
   currVolume = defaultVolume;
   mPod->setVolume(currVolume, currVolume);
   mPod->useInterrupt(VS1053_DREQ); // allows for background audio playing
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Load saved player settings
+bool playerSettingsLoad() {
+  bool retval = true;
+  unsigned int dirLen = getDirPathCharLen(playerDirectory);
+  char dirPath[dirLen];
+  if (!setDirPathChars(dirPath, dirLen, playerDirectory)) {
+    halt("Failed in playerSettingsLoad() calling setDirPathChars()", "SETTINGS ERROR 2");
+  }
+  if (!directoryVerify(dirPath)) {
+    halt("Failed in playerSettingsLoad() calling directoryVerify()", "SETTINGS ERROR 3");
+  }
+  unsigned int fileLen = getCharLen(playerFileSettings);
+  File file;
+  char filePath[(dirLen + fileLen + 1)];
+  strcpy(filePath, dirPath);
+  strcat(filePath, "/");
+  strcat(filePath, playerFileSettings);
+  if (SD.exists(filePath)) {
+    file = SD.open(filePath, FILE_READ);
+    // Read file and set variables
+  } else {
+    // Create and populate file from defaults
+    file = SD.open(filePath, FILE_WRITE);
+    if (!file) {
+      halt("Unable to create settings file", "SETTINGS ERROR 1");
+    }
+  }
+  file.close();
+  return retval;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1051,6 +1137,31 @@ void serialRepeatChar(char out, unsigned int count) {
 void setBytesFromUint(unsigned int val, byte *msb, byte *lsb) {
   *lsb = val & 0xFF;
   *msb = val >> 8;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Create full path directory from input value
+//   dirNameOut      Char array for output of full directory path
+//   dirNameOutSize  Needs to include space for term char
+//   dirNameIn       Name to build full directory path from (term char expected)
+bool setDirPathChars(char *dirNameOut, unsigned int dirNameOutSize, const char *dirNameIn) {
+  bool retval = true;
+  unsigned int dirNameOutPos = 0;
+  unsigned int dirNameInPos = 0;
+  if (dirNameIn[0] != '/') {
+    dirNameOutPos++;
+    dirNameOut[dirNameOutPos] = '/';
+  }
+  while (dirNameIn[dirNameInPos] != '\0') {
+    if (dirNameOutPos >= dirNameOutSize) {
+      return false;
+    }
+    dirNameOut[dirNameOutPos] = dirNameIn[dirNameInPos];
+    dirNameOutPos++;
+    dirNameInPos++;
+  }
+  dirNameOut[dirNameOutPos] = '\0';
+  return retval;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
