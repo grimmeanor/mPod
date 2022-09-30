@@ -631,23 +631,25 @@ bool catalogDirectoryReady(char *dirName) {
 }
 
 unsigned int catalogGetPathLen(const char *dirName) {
-  unsigned int retval = 0;
+  unsigned int retval = 1 + getPathCharLen(playerDirectory); // room for trailing '/'
   unsigned int len;
   if (strcmp(dirName, catalogDefault) != 0) {
+    retval += (1 + getPathCharLen(catalogDefault)); // room for trailing '/'
     // Will need to prepend catalogDefault path name
-    len = 0;
-    while (catalogDefault[len] != '\0') {
-      len++;
-      retval++;
-    }
-    retval += 1; // for '/' between catalogDefault and dirName
+    // len = 0;
+    // while (catalogDefault[len] != '\0') {
+    //   len++;
+    //   retval++;
+    // }
+    // retval += 1; // for '/' between catalogDefault and dirName
   }
-  len = 0;
-  while (dirName[len] != '\0') {
-    len++;
-    retval++;
-  }
-  retval += 2; // Leading root '/' and ending term char
+  // len = 0;
+  // while (dirName[len] != '\0') {
+  //   len++;
+  //   retval++;
+  // }
+  // retval += 2; // Leading root '/' and ending term char
+  retval += getPathCharLen(dirName);
   return retval;
 }
 
@@ -792,7 +794,7 @@ File catalogOpenFile(const char *catalogName, const char *fileName, const char *
   char newFileName[24]; // Max possible with 8.3 naming
   // Retrieve directory name for catalog
   unsigned int dirLength = catalogGetPathLen(catalogName);
-  char dirName[dirLength];
+  char dirName[(dirLength + 1)];
   catalogGetPathName(dirName, dirLength, catalogName);
   // Validate working directory for catalog
   if (!catalogDirectoryReady(dirName)) {
@@ -886,7 +888,7 @@ unsigned int getCharLen(const char *data) {
   return retval;
 }
 
-unsigned int getDirPathCharLen(const char *dir) {
+unsigned int getPathCharLen(const char *dir) {
   unsigned int retval = 0;
   if (dir[0] == '\0') {
     return 1; // root dir '/'
@@ -955,9 +957,9 @@ void mPodInitialize() {
 // Load saved player settings
 bool playerSettingsLoad() {
   bool retval = true;
-  unsigned int dirLen = getDirPathCharLen(playerDirectory);
+  unsigned int dirLen = getPathCharLen(playerDirectory);
   char dirPath[dirLen];
-  if (!setDirPathChars(dirPath, dirLen, playerDirectory)) {
+  if (!setPathChars(dirPath, dirLen, playerDirectory)) {
     halt("Failed in playerSettingsLoad() calling setDirPathChars()", "SETTINGS ERROR 2");
   }
   if (!directoryVerify(dirPath)) {
@@ -1144,7 +1146,7 @@ void setBytesFromUint(unsigned int val, byte *msb, byte *lsb) {
 //   dirNameOut      Char array for output of full directory path
 //   dirNameOutSize  Needs to include space for term char
 //   dirNameIn       Name to build full directory path from (term char expected)
-bool setDirPathChars(char *dirNameOut, unsigned int dirNameOutSize, const char *dirNameIn) {
+bool setPathChars(char *dirNameOut, unsigned int dirNameOutSize, const char *dirNameIn) {
   bool retval = true;
   unsigned int dirNameOutPos = 0;
   unsigned int dirNameInPos = 0;
