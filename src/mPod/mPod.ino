@@ -692,34 +692,28 @@ bool directoryVerify(char *dirName) {
   bool retval = true;
   if (!SD.exists(dirName)) {
     if (!SD.mkdir(dirName)) {
-      unsigned int dirLength = strlen(dirName);
-      char buffer[(33 + dirLength)];
-      char tmp[34] = "Fatal error creating directory %s";
-      int r = sprintf(buffer, tmp, dirName);
-      halt(buffer, "DIR VERIFY ERROR");
+      char msgTemplate[] = "Fatal error creating directory %s";
+      unsigned int msgTemplateLen = strlen(msgTemplate);
+      unsigned int dirLen = strlen(dirName);
+      char msg[(msgTemplateLen + dirLen)];
+      int r = sprintf(msg, msgTemplate, dirName);
+      halt(msg, "DIR VERIFY ERROR");
     }
   }
   // Ensure the passed value is a directory
   File dir = SD.open(dirName);
   if (!dir) {
-    unsigned int dirLength = strlen(dirName);
-    char buffer[(26 + dirLength)];
-    char tmp[27] = "Error opening directory %s";
-    int r = sprintf(buffer, tmp, dirName);
-    halt(buffer, "DIRECTORY ERROR");
+    char msgTemplate = "Error opening directory %s";
+    unsigned int msgTemplateLen = strlen(msgTemplate);
+    unsigned int dirLen = strlen(dirName);
+    char msg[(msgTemplateLen + dirLen)];
+    int r = sprintf(msg, msgTemplate, dirName);
+    halt(msg, "DIRECTORY ERROR");
   }
   if (!dir.isDirectory()) {
     retval = false;
   }
   dir.close();
-  return retval;
-}
-
-unsigned int getCharLen(const char *data) {
-  unsigned int retval = 0;
-  while (data[retval] != '\0') {
-    retval++;
-  }
   return retval;
 }
 
@@ -795,7 +789,7 @@ bool playerSettingsLoad() {
   unsigned int dirLen = getPathCharLen(playerDirectory);
   char dirPath[dirLen];
   if (!setPathChars(dirPath, dirLen, playerDirectory)) {
-    halt("Failed in playerSettingsLoad() calling setDirPathChars()", "SETTINGS ERROR 2");
+    halt("Failed in playerSettingsLoad() calling setPathChars()", "SETTINGS ERROR 2");
   }
   if (!directoryVerify(dirPath)) {
     halt("Failed in playerSettingsLoad() calling directoryVerify()", "SETTINGS ERROR 3");
