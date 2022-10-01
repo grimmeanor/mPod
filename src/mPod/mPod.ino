@@ -124,9 +124,6 @@ const unsigned int catalogSpecItemCount = 1;
 const unsigned int catalogSpecItemMaxLength = 2;
 const unsigned int catalogSpecItemNameMaxLength = 3;
 unsigned int catalogSpec[catalogSpecItems];
-const unsigned int catalogFileNameMaxLen = 16;
-char catalogCurrent[catalogFileNameMaxLen];
-char indexCurrent[catalogFileNameMaxLen];
 const char playerDirectory[] = "/.mPod";
 const char playerFileSettings[] = "settings.s";
 const unsigned int excludeDirectoryCount = 2;
@@ -135,6 +132,8 @@ const char excludeDirectory[excludeDirectoryCount][excludeDirectoryMaxLen] = {
   "/.mPod", "/.Trash-1000"
 };
 const char catalogDefault[] = "Default";
+const unsigned int catalogNameMaxLen = 16;
+char catalogCurrent[catalogNameMaxLen];
 const char catalogFileMaster[] = "catalog.t";
 const char catalogFileSpec[] = "catalog.s";
 bool catalogInitialized = false;
@@ -158,18 +157,12 @@ const unsigned int catalogIndexTypeNameMaxLen = 14;
 const char catalogIndexTypeName[catalogIndexTypeCount][catalogIndexTypeNameMaxLen] = {
   "Default", "Alphanumeric", "Leading Alpha"
 };
-const char errCatalogCreateDirSerial[] = "Failed to create catalog directory";
+const char errCatalogCreateDirSerial[] = "Failed to create catalog directory for %s";
 const char errCatalogCreateDirScreen[] = "CATALOG ERROR 0";
-const char errCatalogOpenDirSerial[] = "Failed to open catalog directory";
-const char errCatalogOpenDirScreen[] = "CATALOG ERROR 1";
-const char errCatalogOpenFileSerial[] = "Failed to open catalog file";
-const char errCatalogOpenFileScreen[] = "CATALOG ERROR 2";
-const char errCatalogOpenIndexSerial[] = "Failed to open catalog index";
+const char errCatalogOpenIndexSerial[] = "Failed to open %s catalog index file %s";
 const char errCatalogOpenIndexScreen[] = "CATALOG ERROR 3";
-const char errCatalogRefreshFileSerial[] = "Failed to refresh catalog file";
+const char errCatalogRefreshFileSerial[] = "Failed to refresh default catalog file";
 const char errCatalogRefreshFileScreen[] = "CATALOG ERROR 4";
-const char errCatalogRefreshIndexSerial[] = "Failed to refresh catalog index";
-const char errCatalogRefreshIndexScreen[] = "CATALOG ERROR 5";
 
 ////////////////////////////////////////////////////////////////////////////////
 // SETUP
@@ -243,7 +236,11 @@ void setup() {
   //----------------------------------------------------------------------------
   // Create music catalog
   if (!catalogCreate(catalogDefault)) {
-    halt(errCatalogCreateDirSerial, errCatalogCreateDirScreen);
+    const unsigned int msgTemplateLen = strlen(errCatalogCreateDirSerial);
+    unsigned int catalogLen = strlen(catalogDefault);
+    char msg[(msgTemplateLen + catalogLen)];
+    int r = sprintf(msg, errCatalogCreateDirSerial, catalogDefault);
+    halt(msg, errCatalogCreateDirScreen);
   }
   
   serialBanner("Welcome to mPod v1.0");
@@ -665,11 +662,11 @@ File catalogOpenFile(const char *catalogName, const char *fileName, const char *
     file = SD.open(newFileName, fileMode);
   }
   if (!file) {
-    Serial.print(F("Error opening file: "));
-    Serial.print(dirName);
-    Serial.print(F("/"));
-    Serial.println(fileName);
-    halt(errCatalogOpenIndexSerial, errCatalogOpenIndexScreen);
+    unsigned int msgTemplateLen = strlen(errCatalogOpenIndexSerial);
+    unsigned int catalogLen = strlen(catalogName);
+    char msg[(msgTemplateLen + dirLength + catalogLen)];
+    int r = sprintf(msg, errCatalogOpenIndexSerial, catalogName, newFileName);
+    halt(msg, errCatalogOpenIndexScreen);
   }
   return file;
 }
@@ -703,7 +700,7 @@ bool directoryVerify(char *dirName) {
   // Ensure the passed value is a directory
   File dir = SD.open(dirName);
   if (!dir) {
-    char msgTemplate = "Error opening directory %s";
+    char msgTemplate[] = "Error opening directory %s";
     unsigned int msgTemplateLen = strlen(msgTemplate);
     unsigned int dirLen = strlen(dirName);
     char msg[(msgTemplateLen + dirLen)];
