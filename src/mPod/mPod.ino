@@ -129,7 +129,7 @@ char catalogCurrent[catalogFileNameMaxLen];
 char indexCurrent[catalogFileNameMaxLen];
 const char playerDirectory[] = "/.mPod";
 const char playerFileSettings[] = "settings.s";
-const char catalogDefault[] = ".mPod";
+const char catalogDefault[] = "Default";
 const char catalogFileMaster[] = "catalog.t";
 const char catalogFileIndex[] = "catalog.x";
 const char catalogFileSpec[] = "catalog.s";
@@ -445,13 +445,27 @@ bool catalogCreateSortIndex(unsigned int sortType, File sort, unsigned int *spec
   if (sorted) {
     byte msb, lsb;
     unsigned int size = 0;
+    Serial.print("Expecting ");
+    Serial.print(specs[catalogSpecItemCount] * catalogIndexItems * 2);
+    Serial.print(" bytes to be written to ");
+    Serial.println(catalogFileSortIndexName[sortType]);
     for (int i=0; i<specs[catalogSpecItemCount]; i++) {
+      Serial.print(i);
       for (int j=0; j<catalogIndexItems; j++) {
+        Serial.print("\t");
         setBytesFromUint(sourceIndex[sortedData[i]][j], &msb, &lsb);
         size += sort.write(msb);
         size += sort.write(lsb);
+        char hexChars[3];
+        int r = sprintf(hexChars, "%02X", msb);
+        Serial.print(hexChars);
+        r = sprintf(hexChars, "%02X", lsb);
+        Serial.print(hexChars);
       }
+      Serial.print("\n");
     }
+    Serial.print(size);
+    Serial.println(" bytes written");
     if (size != (specs[catalogSpecItemCount] * catalogIndexItems * 2)) {
       Serial.print("Error in catalogCreateSortIndex: Expected size of sort file was ");
       Serial.print(specs[catalogSpecItemCount] * 2);
@@ -526,7 +540,7 @@ bool catalogDirectoryExcluded(char *dir, unsigned int dirLen) {
       compare[i] = dir[i];
     }
   }
-  if ((strcmp(compare, "/.mPod") == 0) || (strcmp(compare, "/.Trash") == 0)) {
+  if ((strcmp(compare, playerDirectory) == 0) || (strcmp(compare, "/.Trash") == 0)) {
     retval = true;
   }
   return retval;
@@ -647,7 +661,7 @@ File catalogOpenFile(const char *catalogName, const char *fileName, const char *
     return file;
   }
   dirLength += getPathCharLen(fileName);
-  char newFileName[dirLength]; // max for 8.3 file (plus term char)
+  char newFileName[dirLength];
   strcpy(newFileName, dirName);
   strcat(newFileName, "/");
   strcat(newFileName, fileName);
