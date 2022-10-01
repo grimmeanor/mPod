@@ -129,6 +129,11 @@ char catalogCurrent[catalogFileNameMaxLen];
 char indexCurrent[catalogFileNameMaxLen];
 const char playerDirectory[] = "/.mPod";
 const char playerFileSettings[] = "settings.s";
+const unsigned int excludeDirectoryCount = 2;
+const unsigned int excludeDirectoryMaxLen = 16;
+const char excludeDirectory[excludeDirectoryCount][excludeDirectoryMaxLen] = {
+  "/.mPod", "/.Trash-1000"
+};
 const char catalogDefault[] = "Default";
 const char catalogFileMaster[] = "catalog.t";
 const char catalogFileIndex[] = "catalog.x";
@@ -445,27 +450,13 @@ bool catalogCreateSortIndex(unsigned int sortType, File sort, unsigned int *spec
   if (sorted) {
     byte msb, lsb;
     unsigned int size = 0;
-    Serial.print("Expecting ");
-    Serial.print(specs[catalogSpecItemCount] * catalogIndexItems * 2);
-    Serial.print(" bytes to be written to ");
-    Serial.println(catalogFileSortIndexName[sortType]);
     for (int i=0; i<specs[catalogSpecItemCount]; i++) {
-      Serial.print(i);
       for (int j=0; j<catalogIndexItems; j++) {
-        Serial.print("\t");
         setBytesFromUint(sourceIndex[sortedData[i]][j], &msb, &lsb);
         size += sort.write(msb);
         size += sort.write(lsb);
-        char hexChars[3];
-        int r = sprintf(hexChars, "%02X", msb);
-        Serial.print(hexChars);
-        r = sprintf(hexChars, "%02X", lsb);
-        Serial.print(hexChars);
       }
-      Serial.print("\n");
     }
-    Serial.print(size);
-    Serial.println(" bytes written");
     if (size != (specs[catalogSpecItemCount] * catalogIndexItems * 2)) {
       Serial.print("Error in catalogCreateSortIndex: Expected size of sort file was ");
       Serial.print(specs[catalogSpecItemCount] * 2);
@@ -531,18 +522,23 @@ void catalogDefaultInitialize(File file, File index, File dir, unsigned int *spe
 
 bool catalogDirectoryExcluded(char *dir, unsigned int dirLen) {
   bool retval = false;
-  // Currently the hard-coded exclusions are max 8 chars
-  char compare[8];
-  for (unsigned int i=0; i<8; i++) {
-    if ((i > 0 && dir[i] == '/') || (dir[i] == '\0')) {
-      compare[i] = '\0';
-    } else {
-      compare[i] = dir[i];
+  for (int i=0; i<excludeDirectoryCount; i++) {
+    if (strcmp(dir, excludeDirectory[i]) == 0) {
+      retval = true;
     }
   }
-  if ((strcmp(compare, playerDirectory) == 0) || (strcmp(compare, "/.Trash") == 0)) {
-    retval = true;
-  }
+  // Currently the hard-coded exclusions are max 8 chars
+  // char compare[8];
+  // for (unsigned int i=0; i<8; i++) {
+  //   if ((i > 0 && dir[i] == '/') || (dir[i] == '\0')) {
+  //     compare[i] = '\0';
+  //   } else {
+  //     compare[i] = dir[i];
+  //   }
+  // }
+  // if ((strcmp(compare, playerDirectory) == 0) || (strcmp(compare, "/.Trash") == 0)) {
+  //   retval = true;
+  // }
   return retval;
 }
 
