@@ -136,7 +136,6 @@ const char excludeDirectory[excludeDirectoryCount][excludeDirectoryMaxLen] = {
 };
 const char catalogDefault[] = "Default";
 const char catalogFileMaster[] = "catalog.t";
-const char catalogFileIndex[] = "catalog.x";
 const char catalogFileSpec[] = "catalog.s";
 bool catalogInitialized = false;
 bool catalogReset = false;
@@ -147,12 +146,17 @@ const int catalogIndexFileNameStart = 2;
 const int catalogIndexFileNameLen = 3;
 const int catalogIndexFileExtStart = 4;
 const int catalogIndexFileExtLen = 5;
-const unsigned int catalogSortTypeCount = 2;
-const unsigned int catalogSortTypeAlphanum = 0;
-const unsigned int catalogSortTypeLeadAlpha = 1;
-const unsigned int catalogFileSortIndexNameLength = 11;
-const char catalogFileSortIndexName[catalogSortTypeCount][catalogFileSortIndexNameLength] = {
-  "alphanum.x", "leadalph.x"
+const unsigned int catalogIndexTypeCount = 3;
+const unsigned int catalogIndexTypeDefault = 0;
+const unsigned int catalogIndexTypeSortAlphanum = 1;
+const unsigned int catalogIndexTypeSortLeadAlpha = 2;
+const unsigned int catalogIndexTypeFileNameMaxLen = 11;
+const char catalogIndexTypeFileName[catalogIndexTypeCount][catalogIndexTypeFileNameMaxLen] = {
+  "default.x", "alphanum.x", "leadalph.x"
+};
+const unsigned int catalogIndexTypeNameMaxLen = 14;
+const char catalogIndexTypeName[catalogIndexTypeCount][catalogIndexTypeNameMaxLen] = {
+  "Default", "Alphanumeric", "Leading Alpha"
 };
 const char errCatalogCreateDirSerial[] = "Failed to create catalog directory";
 const char errCatalogCreateDirScreen[] = "CATALOG ERROR 0";
@@ -281,7 +285,7 @@ bool catalogCreate(const char *catalogName) {
         specs[i] = 0;
       }
       File file = catalogOpenFile(catalogName, catalogFileMaster, FILE_WRITE);
-      File index = catalogOpenFile(catalogName, catalogFileIndex, FILE_WRITE);
+      File index = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexTypeDefault], FILE_WRITE);
       catalogDefaultInitialize(file, index, SD.open("/"), specs, "", 0);
       index.close();
       file.close();
@@ -305,7 +309,7 @@ bool catalogCreate(const char *catalogName) {
   } else {
     // Ensure catalog master, index and spec files are available
     File file = catalogOpenFile(catalogName, catalogFileMaster, &FILE_EXISTS);
-    File index = catalogOpenFile(catalogName, catalogFileIndex, &FILE_EXISTS);
+    File index = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexTypeDefault], &FILE_EXISTS);
     File spec = catalogOpenFile(catalogName, catalogFileSpec, &FILE_EXISTS);
     if (!file || !index || !spec) {
       Serial.println(F("Unable to create/verify required catalog files"));
@@ -337,23 +341,23 @@ bool catalogCreateSortIndexes(const char *catalogName) {
   }
   file.close();
   unsigned int sourceIndex[specs[catalogSpecItemCount]][catalogIndexItems];
-  File index = catalogOpenFile(catalogName, catalogFileIndex, FILE_READ);
-  if (!catalogFileIndexRead(catalogName, specs, sourceIndex)) {
+  File index = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexTypeDefault], FILE_READ);
+  if (!catalogFileIndexRead(catalogName, catalogIndexTypeDefault, specs, sourceIndex)) {
     Serial.print("Failed to create sort files due to being unable to open index file for ");
     Serial.println(catalogName);
     return false;
   }
   index.close();
-  File sortAlphaNum = catalogOpenFile(catalogName, catalogFileSortIndexName[catalogSortTypeAlphanum], FILE_WRITE);
-  if (!catalogCreateSortIndex(catalogSortTypeAlphanum, sortAlphaNum, specs, sourceData, sourceIndex)) {
+  File sortAlphaNum = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexTypeSortAlphanum], FILE_WRITE);
+  if (!catalogCreateSortIndex(catalogIndexTypeSortAlphanum, sortAlphaNum, specs, sourceData, sourceIndex)) {
     Serial.print("Failed creating alphanum sort index for ");
     Serial.println(catalogName);
     return false;
   }
   sortAlphaNum.close();
   // Should enhance this call (and target func) to pass array of specs to fill (ex: catalogSpec)
-  File sortLeadAlpha = catalogOpenFile(catalogName, catalogFileSortIndexName[catalogSortTypeLeadAlpha], FILE_WRITE);
-  if (!catalogCreateSortIndex(catalogSortTypeLeadAlpha, sortLeadAlpha, specs, sourceData, sourceIndex)) {
+  File sortLeadAlpha = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexTypeSortLeadAlpha], FILE_WRITE);
+  if (!catalogCreateSortIndex(catalogIndexTypeSortLeadAlpha, sortLeadAlpha, specs, sourceData, sourceIndex)) {
     Serial.print("Failed creating leading alpha sort index for ");
     Serial.println(catalogName);
     return false;
@@ -379,9 +383,9 @@ bool catalogCreateSortIndex(unsigned int sortType, File sort, unsigned int *spec
         char targetItem[sourceIndex[j][catalogIndexFileNameLen] + 1];
         catalogGetUpperDataBySizedRange(targetItem, sourceIndex[j][catalogIndexFileNameStart], sourceIndex[j][catalogIndexFileNameLen], sourceData);
         int result;
-        if (sortType == catalogSortTypeAlphanum) {
+        if (sortType == catalogIndexTypeSortAlphanum) {
           result = strcmp(sourceItem, targetItem);
-        } else if (sortType == catalogSortTypeLeadAlpha) {
+        } else if (sortType == catalogIndexTypeSortLeadAlpha) {
           result = strcmpLeadAlpha(sourceItem, sourceIndex[i][catalogIndexFileNameLen] + 1, targetItem, sourceIndex[j][catalogIndexFileNameLen] + 1);
         } else {
           // Bad error here
@@ -589,9 +593,9 @@ void catalogListSerial(unsigned int *specs, char *playlist, unsigned int playlis
   }
 }
 
-bool catalogFileIndexRead(const char *catalogName, unsigned int *specs, unsigned int catalogItemDef[][catalogIndexItems]) {
+bool catalogFileIndexRead(const char *catalogName, unsigned int catalogIndexType, unsigned int *specs, unsigned int catalogItemDef[][catalogIndexItems]) {
   bool retval = true;
-  File index = catalogOpenFile(catalogName, catalogFileIndex, FILE_READ);
+  File index = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexType], FILE_READ);
   if (index.available() >= (specs[catalogSpecItemCount] * catalogIndexItems * 2)) {
     byte msb, lsb;
     for (int i=0; i<specs[catalogSpecItemCount]; i++) {
@@ -825,7 +829,7 @@ bool playlistFill(char *playlist, unsigned int playlistItem[][catalogIndexItems]
     Serial.println(catalogCurrent);
     return false;
   }
-  if (!catalogFileIndexRead(catalogCurrent, catalogSpec, playlistItem)) {
+  if (!catalogFileIndexRead(catalogCurrent, catalogIndexTypeDefault, catalogSpec, playlistItem)) {
     Serial.print("Failed to load index file for ");
     Serial.println(catalogCurrent);
     return false;
