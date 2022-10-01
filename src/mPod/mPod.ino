@@ -527,18 +527,6 @@ bool catalogDirectoryExcluded(char *dir, unsigned int dirLen) {
       retval = true;
     }
   }
-  // Currently the hard-coded exclusions are max 8 chars
-  // char compare[8];
-  // for (unsigned int i=0; i<8; i++) {
-  //   if ((i > 0 && dir[i] == '/') || (dir[i] == '\0')) {
-  //     compare[i] = '\0';
-  //   } else {
-  //     compare[i] = dir[i];
-  //   }
-  // }
-  // if ((strcmp(compare, playerDirectory) == 0) || (strcmp(compare, "/.Trash") == 0)) {
-  //   retval = true;
-  // }
   return retval;
 }
 
@@ -566,7 +554,9 @@ bool catalogGetUpperDataByIndexedRange(char *buffer, unsigned int from, unsigned
 
 // Buffer must contain extra char after given length for term char
 /**
-Test Test TEst
+ * Neato description here
+ * @param char *buffer    
+ * @return success or failure
 */
 bool catalogGetUpperDataBySizedRange(char *buffer, unsigned int from, unsigned int length, char *data) {
   bool retval = true;
@@ -578,20 +568,12 @@ bool catalogGetUpperDataBySizedRange(char *buffer, unsigned int from, unsigned i
 }
 
 void catalogListSerial(unsigned int *specs, char *playlist, unsigned int playlistItem[][catalogIndexItems]) {
-  const unsigned int textFixedLen = 20;
-  const unsigned int filesLen = 6; // 2 byte unsigned integer max val is 5 digits
-  unsigned int catLen = 0;
-  while (catalogCurrent[catLen] != '\0') {
-    catLen++;
-  }
-  char fileDigits[filesLen];
-  int r = sprintf(fileDigits, "%1d", specs[catalogSpecItemCount]);
-  char bannerText[(textFixedLen + catLen + filesLen + 1)];
-  strcpy(bannerText, "Playlist: ");
-  strcat(bannerText, catalogCurrent);
-  strcat(bannerText, " (");
-  strcat(bannerText, fileDigits);
-  strcat(bannerText, " files)");
+  const char bannerTemplate[] = "Playlist: %s (%d files)";
+  const unsigned int bannerTemplateLen = strlen(bannerTemplate);
+  const unsigned int filesLen = 5; // 2 byte unsigned integer max val is 5 digits
+  unsigned int catLen = strlen(catalogCurrent);
+  char bannerText[(bannerTemplateLen + catLen + filesLen)];
+  int r = sprintf(bannerText, bannerTemplate, catalogCurrent, specs[catalogSpecItemCount]);
   serialBanner(bannerText);
   for (int i=0; i<specs[catalogSpecItemCount]; i++) {
     Serial.print("    ");
