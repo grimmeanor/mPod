@@ -249,7 +249,11 @@ void setup() {
     halt(msg, errCatalogCreateDirScreen);
   }
   
-  catalogResetTo(catalogCurrent);
+  if (!catalogResetTo(catalogCurrent)) {
+    if (!catalogResetTo(catalogDefault)) {
+      halt("Unable to open catalog from settings or default!", "CATALOG ERROR 1");
+    }
+  }
   
   serialBanner("Welcome to mPod v1.0");
 }
@@ -260,7 +264,7 @@ void loop() {
   // Load playlist from current catalog specs for player to use
   char playlist[catalogSpec[catalogSpecLength]];
   unsigned int playlistItem[catalogSpec[catalogSpecItemCount]][catalogIndexItems];
-  // TODO: Incorporate current sort into playlist
+  // TODO: Validate playlist files against master prior to loading
   if (!playlistFill(playlist, playlistItem)) {
     // TODO: Some sort of error here
     Serial.println("Unable to load playlist from catalog!");
@@ -814,6 +818,7 @@ bool playerSettingsLoad() {
     // Read files and set variables
     file = SD.open(filePath, FILE_READ);
     index = SD.open(indexPath, FILE_READ);
+    // Each index is two values (start, length) each a 2 byte uint
     unsigned int indexSize = playerIndexCount * 2 * 2;
     if (index.available() != indexSize) {
       const char msgTemplate[] = "Player settings index is %d bytes, expected %d bytes";
@@ -822,8 +827,8 @@ bool playerSettingsLoad() {
       int r = sprintf(msg, msgTemplate, index.available(), indexSize);
       halt(msg, "SETTINGS ERROR 5");
     }
-    byte msb, lsb;
     unsigned int keys[playerIndexCount][2];
+    byte msb, lsb;
     for (int i=0; i<playerIndexCount; i++) {
       msb = index.read();
       lsb = index.read();
@@ -844,10 +849,16 @@ bool playerSettingsLoad() {
     for (int i=0; i<fileSize; i++) {
       fileData[i] = file.read();
     }
-    for (int i=0; i<keys[playerIndexCatalog][1]; i++) {
-      catalogCurrent[i] = fileData[i + keys[playerIndexCatalog][0]];
+    // Set current catalog
+    if (keys[playerIndexCatalog][1] <= 1) {
+      strcpy(catalogCurrent, catalogDefault);
+    } else {
+      for (int i=0; i<keys[playerIndexCatalog][1]; i++) {
+        catalogCurrent[i] = fileData[i + keys[playerIndexCatalog][0]];
+      }
+      catalogCurrent[keys[playerIndexCatalog][1]] = '\0';
     }
-    catalogCurrent[keys[playerIndexCatalog][1]] = '\0';
+    // set current index type
     char indexType[keys[playerIndexIndexType][1]];
     for (int i=0; i<keys[playerIndexIndexType][1]; i++) {
       indexType[i] = fileData[(i + keys[playerIndexIndexType][0])];
@@ -875,6 +886,7 @@ bool playerSettingsLoad() {
       setBytesFromUint(filePos, &msb, &lsb);
       index.write(msb);
       index.write(lsb);
+      // write file data
       if (i == playerIndexCatalog) {
         len = file.print(catalogDefault);
       } else if (i == playerIndexIndexType) {
