@@ -118,14 +118,13 @@ const char FILE_EXISTS = 'e';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Catalog
-const unsigned int catalogSpecItems = 4;
-const unsigned int catalogSpecLength = 0;
-const unsigned int catalogSpecItemCount = 1; 
-const unsigned int catalogSpecItemMaxLength = 2;
-const unsigned int catalogSpecItemNameMaxLength = 3;
-unsigned int catalogSpec[catalogSpecItems];
 const char playerDirectory[] = "/.mPod";
-const char playerFileSettings[] = "settings.s";
+const char playerFileMaster[] = "settings.t";
+const char playerFileIndex[] = "settings.x";
+const int playerIndexCount = 3;
+const int playerIndexCatalog = 0; // Current catalog (or default)
+const int playerIndexIndexType = 1; // Current index (or default)
+const int playerIndexTrack = 2; // Current track (or first entry by default)
 const unsigned int excludeDirectoryCount = 2;
 const unsigned int excludeDirectoryMaxLen = 16;
 const char excludeDirectory[excludeDirectoryCount][excludeDirectoryMaxLen] = {
@@ -133,11 +132,17 @@ const char excludeDirectory[excludeDirectoryCount][excludeDirectoryMaxLen] = {
 };
 const char catalogDefault[] = "Default";
 const unsigned int catalogNameMaxLen = 16;
-char catalogCurrent[catalogNameMaxLen];
+char catalogCurrent[catalogNameMaxLen+1];
 const char catalogFileMaster[] = "catalog.t";
 const char catalogFileSpec[] = "catalog.s";
 bool catalogInitialized = false;
 bool catalogReset = false;
+const unsigned int catalogSpecItems = 4;
+const unsigned int catalogSpecLength = 0;
+const unsigned int catalogSpecItemCount = 1; 
+const unsigned int catalogSpecItemMaxLength = 2;
+const unsigned int catalogSpecItemNameMaxLength = 3;
+unsigned int catalogSpec[catalogSpecItems];
 const int catalogIndexItems = 6;
 const int catalogIndexFileStart = 0;
 const int catalogIndexFileLen = 1;
@@ -157,6 +162,7 @@ const unsigned int catalogIndexTypeNameMaxLen = 14;
 const char catalogIndexTypeName[catalogIndexTypeCount][catalogIndexTypeNameMaxLen] = {
   "Default", "Alphanumeric", "Leading Alpha"
 };
+unsigned int catalogIndexTypeCurrent;
 const char errCatalogCreateDirSerial[] = "Failed to create catalog directory for %s";
 const char errCatalogCreateDirScreen[] = "CATALOG ERROR 0";
 const char errCatalogOpenIndexSerial[] = "Failed to open %s catalog index file %s";
@@ -243,6 +249,8 @@ void setup() {
     halt(msg, errCatalogCreateDirScreen);
   }
   
+  catalogResetTo(catalogCurrent);
+  
   serialBanner("Welcome to mPod v1.0");
 }
 
@@ -252,7 +260,7 @@ void loop() {
   // Load playlist from current catalog specs for player to use
   char playlist[catalogSpec[catalogSpecLength]];
   unsigned int playlistItem[catalogSpec[catalogSpecItemCount]][catalogIndexItems];
-  unsigned int playlistSort[catalogSpec[catalogSpecItemCount]];
+  // TODO: Incorporate current sort into playlist
   if (!playlistFill(playlist, playlistItem)) {
     // TODO: Some sort of error here
     Serial.println("Unable to load playlist from catalog!");
@@ -298,7 +306,6 @@ bool catalogCreate(const char *catalogName) {
         Serial.println(catalogName);
         return false;
       }
-      catalogResetTo(catalogName);
     } else {
       Serial.println(F("Attempted to create new catalog with same name as default catalog"));
       retval = false;
@@ -791,23 +798,106 @@ bool playerSettingsLoad() {
   if (!directoryVerify(dirPath)) {
     halt("Failed in playerSettingsLoad() calling directoryVerify()", "SETTINGS ERROR 3");
   }
-  unsigned int fileLen = strlen(playerFileSettings);
+  unsigned int fileLen = strlen(playerFileMaster);
+  unsigned int indexLen = strlen(playerFileIndex);
   File file;
+  File index;
   char filePath[(dirLen + fileLen + 1)];
+  char indexPath[(dirLen + indexLen + 1)];
   strcpy(filePath, dirPath);
   strcat(filePath, "/");
-  strcat(filePath, playerFileSettings);
-  if (SD.exists(filePath)) {
+  strcat(filePath, playerFileMaster);
+  strcpy(indexPath, dirPath);
+  strcat(indexPath, "/");
+  strcat(indexPath, playerFileIndex);
+  if (SD.exists(filePath) && SD.exists(indexPath)) {
+    // Read files and set variables
     file = SD.open(filePath, FILE_READ);
-    // Read file and set variables
+    index = SD.open(indexPath, FILE_READ);
+    unsigned int indexSize = playerIndexCount * 2 * 2;
+    if (index.available() != indexSize) {
+      const char msgTemplate[] = "Player settings index is %d bytes, expected %d bytes";
+      unsigned int msgTemplateLen = strlen(msgTemplate);
+      char msg[(msgTemplateLen + 7)];
+      int r = sprintf(msg, msgTemplate, index.available(), indexSize);
+      halt(msg, "SETTINGS ERROR 5");
+    }
+    byte msb, lsb;
+    unsigned int keys[playerIndexCount][2];
+    for (int i=0; i<playerIndexCount; i++) {
+      msb = index.read();
+      lsb = index.read();
+      keys[i][0] = getUintFromBytes(msb, lsb);
+      msb = index.read();
+      lsb = index.read();
+      keys[i][1] = getUintFromBytes(msb, lsb);
+    }
+    unsigned int fileSize = keys[playerIndexCount-1][0] + keys[playerIndexCount-1][1];
+    if (file.available() != fileSize) {
+      const char msgTemplate[] = "Player settings master is %d bytes, expected %d bytes";
+      unsigned int msgTemplateLen = strlen(msgTemplate);
+      char msg[(msgTemplateLen + 7)];
+      int r = sprintf(msg, msgTemplate, file.available(), fileSize);
+      halt(msg, "SETTINGS ERROR 6");
+    }
+    char fileData[fileSize];
+    for (int i=0; i<fileSize; i++) {
+      fileData[i] = file.read();
+    }
+    for (int i=0; i<keys[playerIndexCatalog][1]; i++) {
+      catalogCurrent[i] = fileData[i + keys[playerIndexCatalog][0]];
+    }
+    catalogCurrent[keys[playerIndexCatalog][1]] = '\0';
+    char indexType[keys[playerIndexIndexType][1]];
+    for (int i=0; i<keys[playerIndexIndexType][1]; i++) {
+      indexType[i] = fileData[(i + keys[playerIndexIndexType][0])];
+    }
+    catalogIndexTypeCurrent = atoi(indexType);
+    // TODO: Current catalog track
   } else {
-    // Create and populate file from defaults
+    // Set variables to default and create files from defaults
+    strcpy(catalogCurrent, catalogDefault);
+    catalogIndexTypeCurrent = catalogIndexTypeDefault;
+    // TODO: Current catalog track
     file = SD.open(filePath, FILE_WRITE);
     if (!file) {
-      halt("Unable to create settings file", "SETTINGS ERROR 1");
+      halt("Unable to create player master file", "SETTINGS ERROR 1");
+    }
+    index = SD.open(indexPath, FILE_WRITE);
+    if (!index) {
+      halt("Unable to create player index file", "SETTINGS ERROR 4");
+    }
+    unsigned int filePos = 0;
+    unsigned int len;
+    byte msb, lsb;
+    for (unsigned int i=0; i<playerIndexCount; i++) {
+      // write startPos to index
+      setBytesFromUint(filePos, &msb, &lsb);
+      index.write(msb);
+      index.write(lsb);
+      if (i == playerIndexCatalog) {
+        len = file.print(catalogDefault);
+      } else if (i == playerIndexIndexType) {
+        len = file.print(catalogIndexTypeDefault);
+      } else if (i == playerIndexTrack) {
+        len = file.print("/");
+      } else {
+        const char msgTemplate[] = "Unexpected playerIndex value %d in playerSettingsLoad()";
+        unsigned int msgTemplateLen = strlen(msgTemplate);
+        char msg[(msgTemplateLen + 1)];
+        int r = sprintf(msg, msgTemplate, i);
+        // How did you let this happen? This is not good, better halt
+        halt(msg, "SETTINGS ERROR 5");
+      }
+      filePos += len;
+      // write length to index
+      setBytesFromUint(len, &msb, &lsb);
+      index.write(msb);
+      index.write(lsb);
     }
   }
   file.close();
+  index.close();
   return retval;
 }
 
@@ -820,7 +910,7 @@ bool playlistFill(char *playlist, unsigned int playlistItem[][catalogIndexItems]
     Serial.println(catalogCurrent);
     return false;
   }
-  if (!catalogFileIndexRead(catalogCurrent, catalogIndexTypeDefault, catalogSpec, playlistItem)) {
+  if (!catalogFileIndexRead(catalogCurrent, catalogIndexTypeCurrent, catalogSpec, playlistItem)) {
     Serial.print("Failed to load index file for ");
     Serial.println(catalogCurrent);
     return false;
