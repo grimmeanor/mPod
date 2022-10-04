@@ -240,13 +240,19 @@ void setup() {
   }
   
   //----------------------------------------------------------------------------
-  // Create music catalog
+  // Create default music catalog from files on SD card
   if (!catalogCreate(catalogDefault)) {
     const unsigned int msgTemplateLen = strlen(errCatalogCreateDirSerial);
     unsigned int catalogLen = strlen(catalogDefault);
     char msg[(msgTemplateLen + catalogLen)];
     int r = sprintf(msg, errCatalogCreateDirSerial, catalogDefault);
     halt(msg, errCatalogCreateDirScreen);
+  }
+  
+  //----------------------------------------------------------------------------
+  // Initialize playlists
+  if (!catalogSyncWithDefault()) {
+    halt("Unable to sync playlists with default catalog", "CATALOG ERROR 5");
   }
   
   if (!catalogResetTo(catalogCurrent)) {
@@ -261,11 +267,11 @@ void setup() {
 ////////////////////////////////////////////////////////////////////////////////
 // MAIN PROGRAM LOOP
 void loop() {
-  // Load playlist from current catalog specs for player to use
+  // Load playlist from catalog specs for player to use
   char playlist[catalogSpec[catalogSpecLength]];
   unsigned int playlistItem[catalogSpec[catalogSpecItemCount]][catalogIndexItems];
   // TODO: Validate playlist files against master prior to loading
-  if (!playlistFill(playlist, playlistItem)) {
+  if (!catalogLoad(playlist, playlistItem)) {
     // TODO: Some sort of error here
     Serial.println("Unable to load playlist from catalog!");
     haltImmediate();
@@ -542,6 +548,74 @@ bool catalogDirectoryExcluded(char *dir, unsigned int dirLen) {
   return retval;
 }
 
+bool catalogFileIndexRead(const char *catalogName, unsigned int catalogIndexType, unsigned int *specs, unsigned int catalogItemDef[][catalogIndexItems]) {
+  bool retval = true;
+  File index = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexType], FILE_READ);
+  if (index.available() >= (specs[catalogSpecItemCount] * catalogIndexItems * 2)) {
+    for (int i=0; i<specs[catalogSpecItemCount]; i++) {
+      catalogFileIndexReadEntry(index, i, catalogItemDef);
+    }
+  } else {
+    Serial.println(F("Unable to load catalog index, catalog index is smaller than allocated memory buffer!"));
+    retval = false;
+  }
+  index.close();
+  return retval;
+}
+
+void catalogFileIndexReadEntry(File index, unsigned int entryIndex, unsigned int catalogItemDef[][catalogIndexItems]) {
+  byte msb, lsb;
+  for (int i=0; i<catalogIndexItems; i++) {
+    msb = index.read();
+    lsb = index.read();
+    catalogItemDef[entryIndex][i] = getUintFromBytes(msb, lsb);
+  }
+}
+
+bool catalogFileMasterRead(const char *catalogName, unsigned int *specs, char *catalog) {
+  bool retval = true;
+  File file = catalogOpenFile(catalogName, catalogFileMaster, FILE_READ);
+  if (file.available() >= specs[catalogSpecLength]) {
+    for (unsigned int i=0; i<specs[catalogSpecLength]; i++) {
+      catalog[i] = char(file.read());
+    }
+  } else {
+    Serial.println(F("Unable to load catalog master data, File is smaller than allocated memory buffer!"));
+    retval = false;
+  }
+  file.close();
+  return retval;
+}
+
+// Passed charArray should expect term char to be added as last char (specified by length)
+bool catalogFileMasterReadChars(File file, unsigned int start, unsigned int length, char *charArray) {
+  bool retval = true;
+  file.seek(0);
+  if (file.available() < (start + length)) {
+    Serial.print("Attempted overflow read of data from file ");
+    Serial.print(file.name());
+    Serial.print(" with size ");
+    Serial.print(file.available());
+    Serial.print(" by reading ");
+    Serial.print(length);
+    Serial.print(" bytes starting at position ");
+    Serial.println(start);
+    return false;
+  }
+  if (!file.seek(start)) {
+    Serial.print("Unable to seek position ");
+    Serial.print(start);
+    Serial.print(" in file ");
+    Serial.println(file.name());
+    return false;
+  }
+  for (int i=0; i<length; i++) {
+    charArray[i] = file.read();
+  }
+  charArray[length] = '\0';
+  return retval;
+}
+
 // Buffer must contain extra char after range for term char
 bool catalogGetDataByIndexedRange(char *buffer, unsigned int from, unsigned int to, char *data) {
   unsigned int length = to - from + 1;
@@ -601,38 +675,20 @@ void catalogListSerial(unsigned int *specs, char *playlist, unsigned int playlis
   }
 }
 
-bool catalogFileIndexRead(const char *catalogName, unsigned int catalogIndexType, unsigned int *specs, unsigned int catalogItemDef[][catalogIndexItems]) {
+////////////////////////////////////////////////////////////////////////////////
+// Load data and index for the currently selected catalog
+bool catalogLoad(char *playlist, unsigned int playlistItem[][catalogIndexItems]) {
   bool retval = true;
-  File index = catalogOpenFile(catalogName, catalogIndexTypeFileName[catalogIndexType], FILE_READ);
-  if (index.available() >= (specs[catalogSpecItemCount] * catalogIndexItems * 2)) {
-    byte msb, lsb;
-    for (int i=0; i<specs[catalogSpecItemCount]; i++) {
-      for (int j=0; j<catalogIndexItems; j++) {
-        msb = index.read();
-        lsb = index.read();
-        catalogItemDef[i][j] = getUintFromBytes(msb, lsb);
-      }
-    }
-  } else {
-    Serial.println(F("Unable to load catalog index, catalog index is smaller than allocated memory buffer!"));
-    retval = false;
+  if (!catalogFileMasterRead(catalogCurrent, catalogSpec, playlist)) {
+    Serial.print("Unable to load catalog master file data for ");
+    Serial.println(catalogCurrent);
+    return false;
   }
-  index.close();
-  return retval;
-}
-
-bool catalogFileMasterRead(const char *catalogName, unsigned int *specs, char *catalog) {
-  bool retval = true;
-  File file = catalogOpenFile(catalogName, catalogFileMaster, FILE_READ);
-  if (file.available() >= specs[catalogSpecLength]) {
-    for (unsigned int i=0; i<specs[catalogSpecLength]; i++) {
-      catalog[i] = char(file.read());
-    }
-  } else {
-    Serial.println(F("Unable to load catalog master data, File is smaller than allocated memory buffer!"));
-    retval = false;
+  if (!catalogFileIndexRead(catalogCurrent, catalogIndexTypeCurrent, catalogSpec, playlistItem)) {
+    Serial.print("Failed to load index file for ");
+    Serial.println(catalogCurrent);
+    return false;
   }
-  file.close();
   return retval;
 }
 
@@ -684,15 +740,130 @@ File catalogOpenFile(const char *catalogName, const char *fileName, const char *
 
 bool catalogResetTo(const char *catalogName) {
   bool retval = true;
-  File spec = catalogOpenFile(catalogName, catalogFileSpec, FILE_READ);
-  if (!specFileRead(spec, catalogSpecItems, catalogSpec)) {
-    Serial.print("Unable to load specs for ");
+  File currSpec = catalogOpenFile(catalogName, catalogFileSpec, FILE_READ);
+  if (!specFileRead(currSpec, catalogSpecItems, catalogSpec)) {
+    Serial.print("No specs available for ");
     Serial.println(catalogName);
     return false;
   }
-  spec.close();
+  currSpec.close();
   strcpy(catalogCurrent, catalogName);
   catalogReset = true;
+  return retval;
+}
+
+bool catalogSyncWithDefault() {
+  bool retval = true;
+  // load default catalog and it's alphanum index into memory for more performant lookups
+  unsigned int defaultSpec[catalogSpecItems];
+  File defaultSpecFile = catalogOpenFile(catalogDefault, catalogFileSpec, FILE_READ);
+  if (!specFileRead(defaultSpecFile, catalogSpecItems, defaultSpec)) {
+    halt("Unable to load default catalog specs", "CATALOG ERROR 6");
+  }
+  defaultSpecFile.close();
+  char defaultData[defaultSpec[catalogSpecLength]];
+  unsigned int defaultIndex[defaultSpec[catalogSpecItemCount]][catalogIndexItems];
+  if (!catalogFileMasterRead(catalogDefault, defaultSpec, defaultData)) {
+    halt("Unable to load default catalog master data file", "CATALOG ERROR 7");
+  }
+  if (!catalogFileIndexRead(catalogDefault, catalogIndexTypeSortAlphanum, defaultSpec, defaultIndex)) {
+    halt("Unable to load default catalog alphanum sort file", "CATALOG ERROR 8");
+  }
+  // Loop through playlists
+  
+  Serial.println("Checking playlists");
+  
+  File playerDir = SD.open(playerDirectory, FILE_READ);
+  while (true) {
+    File playlist = playerDir.openNextFile(FILE_READ);
+    if (!playlist) {
+      break;
+    }
+    if (playlist.isDirectory() && (strcmp(playlist.name(), catalogDefault) != 0)) {
+      
+      Serial.print("\t");
+      Serial.println(playlist.name());
+      
+      // Loop through playlist entries in default index order
+      unsigned int playlistSpec[catalogSpecItems];
+      File playlistSpecFile = catalogOpenFile(playlist.name(), catalogFileSpec, FILE_READ);
+      if (!specFileRead(playlistSpecFile, catalogSpecItems, playlistSpec)) {
+        Serial.print("Failed to sync playlist ");
+        Serial.print(playlist.name());
+        Serial.println(" against default catalog due to problem reading playlist spec file!");
+      }
+      playlistSpecFile.close();
+      bool playlistEntryDiscard[playlistSpec[catalogSpecItemCount]];
+      bool changes = true;
+      for (int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
+        playlistEntryDiscard[i] = false;
+      }
+      File playlistMaster = catalogOpenFile(playlist.name(), catalogFileMaster, FILE_READ);
+      File playlistIndex = catalogOpenFile(playlist.name(), catalogIndexTypeFileName[catalogIndexTypeDefault], FILE_READ);
+      for (int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
+        Serial.print("\t\tplaylist item ");
+        Serial.print(i);
+        unsigned int playlistEntry[1][catalogIndexItems];
+        catalogFileIndexReadEntry(playlistIndex, 0, playlistEntry);
+        char playlistEntryName[playlistEntry[0][catalogIndexFileLen]];
+        catalogFileMasterReadChars(playlistMaster, playlistEntry[0][catalogIndexFileStart], playlistEntry[0][catalogIndexFileLen], playlistEntryName);
+        Serial.print(playlistEntryName);
+        Serial.print(" ");
+        // Check this entry name against default catalog
+        bool match = false;
+        unsigned int searchIndex = (int)(defaultSpec[catalogSpecItemCount] / 2.0);
+        unsigned int searchUbound = defaultSpec[catalogSpecItemCount] - 1;
+        unsigned int searchLbound = 0;
+        unsigned int newSearchIndex;
+        while (true) {
+          char defaultEntryName[defaultIndex[searchIndex][catalogIndexFileLen + 1]];
+          for (int j=0; j<defaultIndex[searchIndex][catalogIndexFileLen]; j++) {
+            defaultEntryName[j] = defaultData[(j + defaultIndex[searchIndex][catalogIndexFileStart])];
+          }
+          defaultEntryName[defaultIndex[searchIndex][catalogIndexFileLen]] = '\0';
+          int result = strcmp(playlistEntryName, defaultEntryName);
+          if (result == 0) {
+            match = true;
+            Serial.println("MATCH FOUND");
+            break;
+          } else if (result > 0) {
+            searchLbound = searchIndex;
+            newSearchIndex = searchIndex + (int)((searchUbound - searchIndex) / 2.0);
+          } else {
+            searchUbound = searchIndex;
+            newSearchIndex = (int)((searchIndex - searchLbound) / 2.0);
+          }
+          if (newSearchIndex == searchIndex) {
+            Serial.println("NO MATCH FOUND");
+            break; // No match found
+          } else {
+            searchIndex = newSearchIndex;
+          }
+        }
+        if (!match) {
+          playlistEntryDiscard[i] = true;
+          changes = true;
+        }
+      }
+      if (changes) {
+        // rewrite specs, master file and index with keepers
+        playlistIndex.seek(0);
+        for (int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
+          if (playlistEntryDiscard[i]) {
+            Serial.print("\t\tDiscarding ");
+          } else {
+            Serial.print("\t\tKeeping ");
+          }
+          unsigned int playlistEntry[1][catalogIndexItems];
+          char playlistEntryName[playlistEntry[0][catalogIndexFileLen]];
+          catalogFileIndexReadEntry(playlistIndex, 0, playlistEntry);
+          catalogFileMasterReadChars(playlistMaster, playlistEntry[0][catalogIndexFileStart], playlistEntry[0][catalogIndexFileLen], playlistEntryName);
+          Serial.println(playlistEntryName);
+        }
+      }
+    }
+    playlist.close();
+  }
   return retval;
 }
 
@@ -910,23 +1081,6 @@ bool playerSettingsLoad() {
   }
   file.close();
   index.close();
-  return retval;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Load catalog data for the currently selected playlist
-bool playlistFill(char *playlist, unsigned int playlistItem[][catalogIndexItems]) {
-  bool retval = true;
-  if (!catalogFileMasterRead(catalogCurrent, catalogSpec, playlist)) {
-    Serial.print("Unable to load catalog master file data for ");
-    Serial.println(catalogCurrent);
-    return false;
-  }
-  if (!catalogFileIndexRead(catalogCurrent, catalogIndexTypeCurrent, catalogSpec, playlistItem)) {
-    Serial.print("Failed to load index file for ");
-    Serial.println(catalogCurrent);
-    return false;
-  }
   return retval;
 }
 
