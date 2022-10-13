@@ -270,6 +270,7 @@ void loop() {
   // Load playlist from catalog specs for player to use
   char playlist[catalogSpec[catalogSpecLength]];
   unsigned int playlistItem[catalogSpec[catalogSpecItemCount]][catalogIndexItems];
+  catalogIndexTypeCurrent = catalogIndexTypeSortAlphanum;
   // TODO: Validate playlist files against master prior to loading
   if (!catalogLoad(playlist, playlistItem)) {
     // TODO: Some sort of error here
@@ -609,7 +610,7 @@ bool catalogFileMasterReadChars(File file, unsigned int start, unsigned int leng
     Serial.println(file.name());
     return false;
   }
-  for (int i=0; i<length; i++) {
+  for (unsigned int i=0; i<length; i++) {
     charArray[i] = file.read();
   }
   charArray[length] = '\0';
@@ -754,6 +755,9 @@ bool catalogResetTo(const char *catalogName) {
 
 bool catalogSyncWithDefault() {
   bool retval = true;
+  char tempData[] = "temp.t";
+  char tempIndex[] = "temp.x";
+  char tempSpec[] = "temp.s";
   // load default catalog and it's alphanum index into memory for more performant lookups
   unsigned int defaultSpec[catalogSpecItems];
   File defaultSpecFile = catalogOpenFile(catalogDefault, catalogFileSpec, FILE_READ);
@@ -793,77 +797,154 @@ bool catalogSyncWithDefault() {
         Serial.println(" against default catalog due to problem reading playlist spec file!");
       }
       playlistSpecFile.close();
-      bool playlistEntryDiscard[playlistSpec[catalogSpecItemCount]];
-      bool changes = true;
-      for (int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
-        playlistEntryDiscard[i] = false;
-      }
+      bool changes = false;
       File playlistMaster = catalogOpenFile(playlist.name(), catalogFileMaster, FILE_READ);
       File playlistIndex = catalogOpenFile(playlist.name(), catalogIndexTypeFileName[catalogIndexTypeDefault], FILE_READ);
-      for (int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
+      File playlistTempMaster = catalogOpenFile(playlist.name(), tempData, FILE_WRITE);
+      File playlistTempIndex = catalogOpenFile(playlist.name(), tempIndex, FILE_WRITE);
+      File playlistTempSpec = catalogOpenFile(playlist.name(), tempSpec, FILE_WRITE);
+      unsigned int tempSpecs[catalogSpecItems];
+      for (unsigned int i=0; i<catalogSpecItems; i++) {
+        tempSpecs[i]=0;
+      }
+      for (unsigned int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
         Serial.print("\t\tplaylist item ");
         Serial.print(i);
+        Serial.print(": ");
         unsigned int playlistEntry[1][catalogIndexItems];
         catalogFileIndexReadEntry(playlistIndex, 0, playlistEntry);
-        char playlistEntryName[playlistEntry[0][catalogIndexFileLen]];
+        char playlistEntryName[playlistEntry[0][catalogIndexFileLen] + 1];
         catalogFileMasterReadChars(playlistMaster, playlistEntry[0][catalogIndexFileStart], playlistEntry[0][catalogIndexFileLen], playlistEntryName);
-        Serial.print(playlistEntryName);
-        Serial.print(" ");
+        for (unsigned int j=0; j<playlistEntry[0][catalogIndexFileLen] + 1; j++) {
+          Serial.print(playlistEntryName[j], HEX);
+          Serial.print(",");
+          if (isLowerCase(playlistEntryName[j])) {
+            playlistEntryName[j] = playlistEntryName[j] - ('a' - 'A');
+          }
+          Serial.print(playlistEntryName[j], HEX);
+          Serial.print(" ");
+        }
+        Serial.println(playlistEntryName);
         // Check this entry name against default catalog
         bool match = false;
         unsigned int searchIndex = (int)(defaultSpec[catalogSpecItemCount] / 2.0);
         unsigned int searchUbound = defaultSpec[catalogSpecItemCount] - 1;
         unsigned int searchLbound = 0;
+        unsigned int sameIndex = 0;
         unsigned int newSearchIndex;
         while (true) {
-          char defaultEntryName[defaultIndex[searchIndex][catalogIndexFileLen + 1]];
-          for (int j=0; j<defaultIndex[searchIndex][catalogIndexFileLen]; j++) {
+          Serial.print("\t\t\tComparing to default index ");
+          Serial.print(searchIndex);
+          Serial.print(": ");
+          char defaultEntryName[defaultIndex[searchIndex][catalogIndexFileLen] + 1];
+          for (unsigned int j=0; j<defaultIndex[searchIndex][catalogIndexFileLen]; j++) {
             defaultEntryName[j] = defaultData[(j + defaultIndex[searchIndex][catalogIndexFileStart])];
           }
           defaultEntryName[defaultIndex[searchIndex][catalogIndexFileLen]] = '\0';
+          for (unsigned int j=0; j<defaultIndex[searchIndex][catalogIndexFileLen] + 1; j++) {
+            Serial.print(defaultEntryName[j], HEX);
+            Serial.print(",");
+            if (isLowerCase(defaultEntryName[j])) {
+              defaultEntryName[j] = defaultEntryName[j] - ('a' - 'A');
+            }
+            Serial.print(defaultEntryName[j], HEX);
+            Serial.print(" ");
+          }
+          Serial.print(defaultEntryName);
+          Serial.print("\n");
           int result = strcmp(playlistEntryName, defaultEntryName);
           if (result == 0) {
             match = true;
-            Serial.println("MATCH FOUND");
+            Serial.println("\t\t\tMATCH FOUND");
+            // Write the default catalog data at this searchIndex location to the keeper data/index files playlistTempMaster and playlistTempIndex
+            unsigned int tempIndex[catalogIndexItems];
+            tempIndex[catalogIndexFileStart] = tempSpecs[catalogSpecLength];
+            tempIndex[catalogIndexFileLen] = defaultIndex[searchIndex][catalogIndexFileLen];
+            tempIndex[catalogIndexFileNameStart] = tempIndex[catalogIndexFileStart] + defaultIndex[searchIndex][catalogIndexFileNameStart] - defaultIndex[searchIndex][catalogIndexFileStart];
+            tempIndex[catalogIndexFileNameLen] = defaultIndex[searchIndex][catalogIndexFileNameLen];
+            tempIndex[catalogIndexFileExtStart] = tempIndex[catalogIndexFileStart] + defaultIndex[searchIndex][catalogIndexFileLen] - defaultIndex[searchIndex][catalogIndexFileExtLen];
+            tempIndex[catalogIndexFileExtLen] = defaultIndex[searchIndex][catalogIndexFileExtLen];
+            tempSpecs[catalogSpecLength] += playlistTempMaster.print(playlistEntryName);
+            Serial.print("\t\t\tExpected: ");
+            Serial.print(tempIndex[catalogIndexFileStart]);
+            Serial.print(", ");
+            Serial.print(tempIndex[catalogIndexFileLen]);
+            Serial.print(", ");
+            Serial.print(tempIndex[catalogIndexFileNameStart]);
+            Serial.print(", ");
+            Serial.print(tempIndex[catalogIndexFileNameLen]);
+            Serial.print(", ");
+            Serial.print(tempIndex[catalogIndexFileExtStart]);
+            Serial.print(", ");
+            Serial.print(tempIndex[catalogIndexFileExtLen]);
+            Serial.print("\n\t\t\tWriting: ");
+            byte lsb, msb;
+            for (int j=0; j<catalogIndexItems; j++) {
+              setBytesFromUint(tempIndex[j], &msb, &lsb);
+              playlistTempIndex.write(msb);
+              playlistTempIndex.write(lsb);
+              Serial.print("(");
+              Serial.print(msb);
+              Serial.print(",");
+              Serial.print(lsb);
+              Serial.print(") ");
+            }
+            Serial.print("\n");
+            tempSpecs[catalogSpecItemCount]++;
+            if (tempSpecs[catalogSpecItemMaxLength] < defaultIndex[searchIndex][catalogIndexFileLen]) {
+              tempSpecs[catalogSpecItemMaxLength] = defaultIndex[searchIndex][catalogIndexFileLen];
+            }
+            if (tempSpecs[catalogSpecItemNameMaxLength] < defaultIndex[searchIndex][catalogIndexFileNameLen]) {
+              tempSpecs[catalogSpecItemNameMaxLength] = defaultIndex[searchIndex][catalogIndexFileNameLen];
+            }
             break;
           } else if (result > 0) {
+            Serial.print("\t\t\tseeking higher position between ");
             searchLbound = searchIndex;
-            newSearchIndex = searchIndex + (int)((searchUbound - searchIndex) / 2.0);
+            newSearchIndex = searchIndex + (unsigned int)((searchUbound - searchIndex) / 2.0) + 1;
           } else {
+            Serial.print("\t\t\tseeking lower position between ");
             searchUbound = searchIndex;
-            newSearchIndex = (int)((searchIndex - searchLbound) / 2.0);
+            newSearchIndex = searchLbound + (unsigned int)((searchIndex - searchLbound) / 2.0);
           }
-          if (newSearchIndex == searchIndex) {
-            Serial.println("NO MATCH FOUND");
+          if (newSearchIndex == searchIndex || sameIndex > 1) {
+            Serial.println("\t\t\tNO MATCH FOUND");
+            changes = true;
             break; // No match found
           } else {
+            if (newSearchIndex == searchUbound || newSearchIndex == searchLbound) {
+              sameIndex++;
+            }
+            Serial.print(searchLbound);
+            Serial.print(" and ");
+            Serial.println(searchUbound);
             searchIndex = newSearchIndex;
           }
         }
-        if (!match) {
-          playlistEntryDiscard[i] = true;
-          changes = true;
-        }
+        Serial.print("\t\tchanges:");
+        Serial.println(changes);
       }
       if (changes) {
-        // rewrite specs, master file and index with keepers
-        playlistIndex.seek(0);
-        for (int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
-          if (playlistEntryDiscard[i]) {
-            Serial.print("\t\tDiscarding ");
-          } else {
-            Serial.print("\t\tKeeping ");
-          }
-          unsigned int playlistEntry[1][catalogIndexItems];
-          char playlistEntryName[playlistEntry[0][catalogIndexFileLen]];
-          catalogFileIndexReadEntry(playlistIndex, 0, playlistEntry);
-          catalogFileMasterReadChars(playlistMaster, playlistEntry[0][catalogIndexFileStart], playlistEntry[0][catalogIndexFileLen], playlistEntryName);
-          Serial.println(playlistEntryName);
+        Serial.print("\t\tPlaylist \"");
+        Serial.print(playlist.name());
+        Serial.println("\" needs to be rebuilt due to missing files in primary catalog");
+        if (!specFileWrite(playlistTempSpec, catalogSpecItems, tempSpecs)) {
+          Serial.print("Unable to write to spec file for playlist ");
+          Serial.println(playlist.name());
         }
+        // remove old files and replace with contents of temp files
+      } else {
+        // remove temp files
       }
+      playlistTempIndex.close();
+      playlistTempMaster.close();
+      playlistTempSpec.close();
+      playlistMaster.close();
+      playlistIndex.close();
     }
     playlist.close();
   }
+  playerDir.close();
   return retval;
 }
 
