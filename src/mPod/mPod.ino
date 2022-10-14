@@ -762,7 +762,6 @@ bool catalogPlaylistIsStale(const char *playlistName, unsigned int *defaultSpec,
     Serial.print("\t\tplaylist item ");
     Serial.print(i);
     Serial.print(": ");
-    // TODO: Is a 2-D array necessary here?
     unsigned int playlistEntry[1][catalogIndexItems];
     catalogFileIndexReadEntry(playlistIndex, 0, playlistEntry);
     char playlistEntryName[playlistEntry[0][catalogIndexFileLen] + 1];
@@ -860,7 +859,14 @@ bool catalogPlaylistIsStale(const char *playlistName, unsigned int *defaultSpec,
         newSearchIndex = searchLbound + (unsigned int)((searchIndex - searchLbound) / 2.0);
       }
       if (newSearchIndex == searchIndex || sameIndex > 1) {
-        Serial.println("\t\t\tNO MATCH FOUND");
+        Serial.print("\t\t\tNO MATCH FOUND");
+        Serial.print(" (searchIndex=");
+        Serial.print(searchIndex);
+        Serial.print(", newSearchIndex=");
+        Serial.print(newSearchIndex);
+        Serial.print(", ");
+        Serial.print("sameIndex=");
+        Serial.println(sameIndex);
         retval = true;
         break; // No match found
       } else {
