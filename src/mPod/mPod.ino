@@ -110,6 +110,119 @@ const char msgVS1053FaultScreen[] = "VS1053 HARDWARE FAULT";
 ////////////////////////////////////////////////////////////////////////////////
 // ANO Directional Navigation and Rotary Encoder
 RotaryEncoder *scrollWheel = nullptr;
+const int scrollClockwise = (int)RotaryEncoder::Direction::CLOCKWISE;
+const int scrollCounterClockwise = (int)RotaryEncoder::Direction::COUNTERCLOCKWISE;
+const int scrollNone = (int)RotaryEncoder::Direction::NOROTATION;
+long scrollPriorValue = 0;
+int scrollDirection = scrollNone;
+
+////////////////////////////////////////////////////////////////////////////////
+// Events
+unsigned long eventLoop = 0;
+const byte eventCount = 18;
+const byte eventNone = 0;
+const byte eventScrollForward = 1;
+const byte eventScrollBackward = 2;
+const byte eventNavCenterClick = 3;
+const byte eventNavLeftClick = 4;
+const byte eventNavUpClick = 5;
+const byte eventNavRightClick = 6;
+const byte eventNavDownClick = 7;
+const byte eventNavCenterHold = 8;
+const byte eventNavLeftHold = 9;
+const byte eventNavUpHold = 10;
+const byte eventNavRightHold = 11;
+const byte eventNavDownHold = 12;
+const byte eventNavCenterHolding = 13;
+const byte eventNavLeftHolding = 14;
+const byte eventNavUpHolding = 15;
+const byte eventNavRightHolding = 16;
+const byte eventNavDownHolding = 17;
+const char eventName[eventCount][19] = {
+  "n/a", "scroll forward", "scroll backward", "nav center click",
+  "nav left click", "nav up click", "nav right click", "nav down click",
+  "nav center hold", "nav left hold", "nav up hold", "nav right hold",
+  "nav down hold", "nav center holding", "nav left holding", "nav up holding",
+  "nav right holding", "nav down holding"
+};
+const byte eventQueueSize = 8;
+byte eventQueue[eventQueueSize] = {
+  eventNone, eventNone, eventNone, eventNone, eventNone, eventNone, eventNone,
+  eventNone
+};
+byte eventsQueued = 0;
+
+////////////////////////////////////////////////////////////////////////////////
+// PinTypes
+const byte pinTypeCount = 2;
+const byte pinTypeDigital = 0;
+const byte pinTypeAnalog = 1;
+const char pintTypeName[pinTypeCount][8] = { "digital", "analog" };
+
+////////////////////////////////////////////////////////////////////////////////
+// Buttons
+const int buttonAnalogPressThreshold = 3840; //12 bit resolution on this board
+const unsigned long buttonDebouncePeriod = 70000; //microseconds
+const unsigned long buttonLongPressPeriod = 1750000; //microseconds
+const byte buttonValueCount = 3;
+const byte buttonValueNone = 0;
+const byte buttonValueReleased = 1;
+const byte buttonValuePressed = 2;
+const char buttonValueName[buttonValueCount][9] = {
+  "n/a", "released", "pressed"
+};
+const byte buttonStateCount = 4;
+const byte buttonStateNone = 0;
+const byte buttonStateDebouncingPress = 1;
+const byte buttonStateAwaitingLongPress = 2;
+const byte buttonStateAwaitingRelease = 3;
+const char buttonStateName[buttonStateCount][20] = {
+  "n/a", "debouncing press", "awaiting long press", "awaiting release"
+};
+const byte buttonCount = 5;
+const byte buttonNavCenter = 0;
+const byte buttonNavLeft = 1;
+const byte buttonNavUp = 2;
+const byte buttonNavRight = 3;
+const byte buttonNavDown = 4;
+const byte button[buttonCount] = {
+  buttonNavCenter, buttonNavLeft, buttonNavUp, buttonNavRight, buttonNavDown
+};
+const char buttonName[buttonCount][11] = {
+  "nav-center", "nav-left", "nav-up", "nav-right", "nav-down"
+};
+const byte buttonEventCount = 3;
+const byte buttonEventClick = 0;
+const byte buttonEventHold = 1;
+const byte buttonEventHolding = 2;
+const byte buttonEvent[buttonCount][buttonEventCount] = {
+  { eventNavCenterClick, eventNavCenterHold, eventNavCenterHolding },
+  { eventNavLeftClick, eventNavLeftHold, eventNavLeftHolding },
+  { eventNavUpClick, eventNavUpHold, eventNavUpHolding },
+  { eventNavRightClick, eventNavRightHold, eventNavRightHolding },
+  { eventNavDownClick, eventNavDownHold, eventNavDownHolding },
+};
+const int buttonPin[buttonCount] = {
+  ANO_SWC, ANO_SWL, ANO_SWU, ANO_SWR, ANO_SWD
+};
+const byte buttonPinType[buttonCount] = {
+  pinTypeDigital, pinTypeAnalog, pinTypeAnalog, pinTypeAnalog, pinTypeAnalog
+};
+const int buttonPinReadPressedVal[buttonCount] = {
+  LOW, buttonAnalogPressThreshold, buttonAnalogPressThreshold,
+  buttonAnalogPressThreshold, buttonAnalogPressThreshold
+};
+byte buttonValue[buttonCount] = {
+  buttonValueReleased, buttonValueReleased, buttonValueReleased,
+  buttonValueReleased, buttonValueReleased
+};
+unsigned long buttonValueTime[buttonCount] = { 0, 0, 0, 0, 0 };
+byte buttonState[buttonCount] = {
+  buttonStateNone, buttonStateNone, buttonStateNone, buttonStateNone,
+  buttonStateNone
+};
+unsigned long buttonDebounceThreshold[buttonCount] = { 0, 0, 0, 0, 0 };
+unsigned long buttonLongPressThreshold[buttonCount] = { 0, 0, 0, 0, 0 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // Files
@@ -121,8 +234,6 @@ const char FILE_EXISTS = 'e';
 const char playerDirectory[] = "/.mPod";
 const char playerFileMaster[] = "settings.t";
 const char playerFileIndex[] = "settings.x";
-const char playerFileTempMaster[] = "temp.t";
-const char playerFileTempIndex[] = "temp.x";
 const int playerIndexCount = 3;
 const int playerIndexCatalog = 0; // Current catalog (or default)
 const int playerIndexIndexType = 1; // Current index (or default)
@@ -137,6 +248,8 @@ const unsigned int catalogNameMaxLen = 16;
 char catalogCurrent[catalogNameMaxLen+1];
 const char catalogFileMaster[] = "catalog.t";
 const char catalogFileSpec[] = "catalog.s";
+const char catalogFileTempMaster[] = "temp.t";
+const char catalogFileTempIndex[] = "temp.x";
 bool catalogInitialized = false;
 bool catalogReset = false;
 const unsigned int catalogSpecItems = 4;
@@ -171,6 +284,14 @@ const char errCatalogOpenIndexSerial[] = "Failed to open %s catalog index file %
 const char errCatalogOpenIndexScreen[] = "CATALOG ERROR 3";
 const char errCatalogRefreshFileSerial[] = "Failed to refresh default catalog file";
 const char errCatalogRefreshFileScreen[] = "CATALOG ERROR 4";
+
+////////////////////////////////////////////////////////////////////////////////
+// Player
+const int playerIsStopped = 0;
+const int playerIsPlaying = 1;
+const int playerIsPaused = 2;
+int playerCurrentStatus;
+int playerPriorStatus;
 
 ////////////////////////////////////////////////////////////////////////////////
 // SETUP
@@ -252,7 +373,7 @@ void setup() {
   }
   
   //----------------------------------------------------------------------------
-  // Initialize playlists
+  // Ensure playlist files match up to default catalog
   if (!catalogRefreshStalePlaylists()) {
     halt("Unable to sync playlists with default catalog", "CATALOG ERROR 5");
   }
@@ -272,18 +393,19 @@ void loop() {
   // Load playlist from catalog specs for player to use
   char playlist[catalogSpec[catalogSpecLength]];
   unsigned int playlistItem[catalogSpec[catalogSpecItemCount]][catalogIndexItems];
-  catalogIndexTypeCurrent = catalogIndexTypeSortAlphanum;
-  // TODO: Validate playlist files against master prior to loading
+  // catalogIndexTypeCurrent = catalogIndexTypeSortAlphanum;
   if (!catalogLoad(playlist, playlistItem)) {
     // TODO: Some sort of error here
     Serial.println("Unable to load playlist from catalog!");
     haltImmediate();
   }
   catalogReset = false;
-  // Player operation loop
+  catalogListSerial(catalogSpec, playlist, playlistItem);
+  // Main program event loop
   while (true) {
-    catalogListSerial(catalogSpec, playlist, playlistItem);
-    halt("Testing completed!", "TEST COMPLETE");
+    eventLoop = micros();
+    inputHandler();
+    eventHandler();
     if (catalogReset) {
       break;
     }
@@ -756,8 +878,8 @@ bool catalogPlaylistIsStale(const char *playlistName, unsigned int *defaultSpec,
   playlistSpecFile.close();
   File playlistMaster = catalogOpenFile(playlistName, catalogFileMaster, FILE_READ);
   File playlistIndex = catalogOpenFile(playlistName, catalogIndexTypeFileName[catalogIndexTypeDefault], FILE_READ);
-  File playlistTempMaster = catalogOpenFile(playlistName, playerFileTempMaster, FILE_WRITE);
-  File playlistTempIndex = catalogOpenFile(playlistName, playerFileTempIndex, FILE_WRITE);
+  File playlistTempMaster = catalogOpenFile(playlistName, catalogFileTempMaster, FILE_WRITE);
+  File playlistTempIndex = catalogOpenFile(playlistName, catalogFileTempIndex, FILE_WRITE);
   for (unsigned int i=0; i<playlistSpec[catalogSpecItemCount]; i++) {
     Serial.print("\t\tplaylist item ");
     Serial.print(i);
@@ -915,8 +1037,8 @@ bool catalogRefreshPlaylist(const char *playlistName, unsigned int *tempSpecs) {
   strcat(dirName, "/");
   strcat(dirName, playlistName);
   strcat(dirName, "/");
-  unsigned int tempMasterLength = dirLength + getPathCharLen(playerFileTempMaster);
-  unsigned int tempIndexLength = dirLength + getPathCharLen(playerFileTempIndex);
+  unsigned int tempMasterLength = dirLength + getPathCharLen(catalogFileTempMaster);
+  unsigned int tempIndexLength = dirLength + getPathCharLen(catalogFileTempIndex);
   unsigned int playlistSpecLength = dirLength + getPathCharLen(catalogFileSpec);
   unsigned int playlistMasterLength = dirLength + getPathCharLen(catalogFileMaster);
   unsigned int playlistIndexDefaultLength = dirLength + getPathCharLen(catalogIndexTypeFileName[catalogIndexTypeDefault]);
@@ -936,8 +1058,8 @@ bool catalogRefreshPlaylist(const char *playlistName, unsigned int *tempSpecs) {
   strcpy(playlistIndexDefaultName, dirName);
   strcpy(playlistIndexSortAlphanumName, dirName);
   strcpy(playlistIndexSortLeadAlphaName, dirName);
-  strcat(tempMasterName, playerFileTempMaster);
-  strcat(tempIndexName, playerFileTempIndex);
+  strcat(tempMasterName, catalogFileTempMaster);
+  strcat(tempIndexName, catalogFileTempIndex);
   strcat(playlistSpecName, catalogFileSpec);
   strcat(playlistMasterName, catalogFileMaster);
   strcat(playlistIndexDefaultName, catalogIndexTypeFileName[catalogIndexTypeDefault]);
@@ -971,7 +1093,7 @@ bool catalogRefreshPlaylist(const char *playlistName, unsigned int *tempSpecs) {
   }
   playlistSpecFile.close();
   File playlistMaster = catalogOpenFile(playlistName, catalogFileMaster, FILE_WRITE);
-  File playlistTempMaster = catalogOpenFile(playlistName, playerFileTempMaster, FILE_READ);
+  File playlistTempMaster = catalogOpenFile(playlistName, catalogFileTempMaster, FILE_READ);
   while (playlistTempMaster.available()) {
     playlistMaster.write(playlistTempMaster.read());
   }
@@ -979,7 +1101,7 @@ bool catalogRefreshPlaylist(const char *playlistName, unsigned int *tempSpecs) {
   playlistTempMaster.close();
   SD.remove(tempMasterName);
   File playlistIndex = catalogOpenFile(playlistName, catalogIndexTypeFileName[catalogIndexTypeDefault], FILE_WRITE);
-  File playlistTempIndex = catalogOpenFile(playlistName, playerFileTempIndex, FILE_READ);
+  File playlistTempIndex = catalogOpenFile(playlistName, catalogFileTempIndex, FILE_READ);
   while (playlistTempIndex.available()) {
     playlistIndex.write(playlistTempIndex.read());
   }
@@ -1038,14 +1160,14 @@ bool catalogRefreshStalePlaylists() {
         strcat(dirName, "/");
         strcat(dirName, playlist.name());
         strcat(dirName, "/");
-        unsigned int tempMasterLength = dirLength + getPathCharLen(playerFileTempMaster);
-        unsigned int tempIndexLength = dirLength + getPathCharLen(playerFileTempIndex);
+        unsigned int tempMasterLength = dirLength + getPathCharLen(catalogFileTempMaster);
+        unsigned int tempIndexLength = dirLength + getPathCharLen(catalogFileTempIndex);
         char tempMasterName[(tempMasterLength)];
         char tempIndexName[(tempIndexLength)];
         strcpy(tempMasterName, dirName);
         strcpy(tempIndexName, dirName);
-        strcat(tempMasterName, playerFileTempMaster);
-        strcat(tempIndexName, playerFileTempIndex);
+        strcat(tempMasterName, catalogFileTempMaster);
+        strcat(tempIndexName, catalogFileTempIndex);
         if (!SD.remove(tempMasterName)) {
           Serial.print("\t\tFailed to remove comparison file ");
           Serial.println(tempMasterName);
@@ -1089,6 +1211,45 @@ bool directoryVerify(char *dirName) {
   }
   dir.close();
   return retval;
+}
+
+byte eventDequeue() {
+  byte retval = eventNone;
+  if (eventsQueued == 0) {
+    Serial.println("Event queue is empty, unable to process eventDequeue request");
+  } else {
+    eventsQueued--;
+    retval = eventQueue[eventsQueued];
+    eventQueue[eventsQueued] = eventNone;
+  }
+  return retval;
+}
+
+bool eventEnqueue(byte event) {
+  bool retval = true;
+  if (event == eventNone) {
+    // just ignore
+    return true;
+  }
+  if (eventsQueued >= eventQueueSize) {
+    Serial.println("Event queue is full, unable to add event to queue");
+    return false;
+  }
+  eventQueue[eventsQueued] = event;
+  eventsQueued++;
+  return retval;
+}
+
+void eventHandler() {
+  while (eventsQueued > 0) {
+    byte event = eventDequeue();
+    if (event == eventNone) {
+      // ignore this and move to the next
+      continue;
+    }
+    Serial.print(eventName[event]);
+    Serial.println(" event raised");
+  }
 }
 
 unsigned int getPathCharLen(const char *dir) {
@@ -1146,6 +1307,121 @@ void halt(const char *msgSerial, const char *msgScreen) {
     1, false, true, "mPod is dead"
   );
   haltImmediate();
+}
+
+byte inputButtonRead(byte button) {
+  int pinVal;
+  if (buttonPinType[button] == pinTypeDigital) {
+    pinVal = digitalRead(buttonPin[button]);
+    if (pinVal == buttonPinReadPressedVal[button]) {
+      return buttonValuePressed;
+    } else {
+      return buttonValueReleased;
+    }
+  } else {
+    pinVal = analogRead(buttonPin[button]);
+    if (pinVal >= buttonPinReadPressedVal[button]) {
+      return buttonValuePressed;
+    } else {
+      return buttonValueReleased;
+    }
+  }
+}
+
+void inputHandler() {
+  inputHandlerNavButtons();
+  inputHandlerScrollWheel(scrollWheel->getPosition());
+}
+
+void inputHandlerNavButtons() {
+  for (byte button=0; button < buttonCount; button++) {
+    // First handle physical button state changes
+    byte buttonCurrentValue = inputButtonRead(button);
+    if (buttonCurrentValue != buttonValue[button]) {
+      switch (buttonState[button]) {
+        case buttonStateNone:
+          if (buttonCurrentValue == buttonValuePressed) {
+            buttonState[button] = buttonStateDebouncingPress;
+            buttonValue[button] = buttonCurrentValue;
+            buttonValueTime[button] = eventLoop;
+            buttonDebounceThreshold[button] = eventLoop + buttonDebouncePeriod;
+            buttonLongPressThreshold[button] = eventLoop + buttonLongPressPeriod;
+          }
+          break;
+        case buttonStateDebouncingPress:
+          if (buttonCurrentValue == buttonValueReleased) {
+            buttonState[button] = buttonStateNone;
+            buttonValue[button] = buttonCurrentValue;
+          }
+          break;
+        case buttonStateAwaitingLongPress:
+          if (buttonCurrentValue == buttonValueReleased) {
+            eventEnqueue(buttonEvent[button][buttonEventClick]);
+            buttonState[button] = buttonStateNone;
+            buttonValue[button] = buttonCurrentValue;
+          }
+          break;
+        case buttonStateAwaitingRelease:
+          if (buttonCurrentValue == buttonValueReleased) {
+            buttonState[button] = buttonStateNone;
+            buttonValue[button] = buttonCurrentValue;
+          }
+          break;
+        default:
+          buttonState[button] = buttonStateNone;
+          buttonValue[button] = buttonValueNone;
+          break;
+      }
+    }
+    // Next handle logical button state changes
+    switch (buttonState[button]) {
+      case buttonStateDebouncingPress:
+        if (eventLoop >= buttonDebounceThreshold[button]) {
+          buttonState[button] = buttonStateAwaitingLongPress;
+        }
+        break;
+      case buttonStateAwaitingLongPress:
+        if (eventLoop >= buttonLongPressThreshold[button]) {
+          buttonState[button] = buttonStateAwaitingRelease;
+          eventEnqueue(buttonEvent[button][buttonEventHold]);
+        }
+        break;
+      case buttonStateAwaitingRelease:
+        eventEnqueue(buttonEvent[button][buttonEventHolding]);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+void inputHandlerScrollWheel(long scrollCurrentValue) {
+  if (scrollCurrentValue != scrollPriorValue) {
+    int direction = (int)scrollWheel->getDirection();
+    switch(direction) {
+      case scrollClockwise:
+        if (!eventEnqueue(eventScrollForward)) {
+          Serial.println("Scroll forward event ignored");
+        }
+        break;
+      case scrollCounterClockwise:
+        if (!eventEnqueue(eventScrollBackward)) {
+          Serial.println("Scroll backward event ignored");
+        }
+        break;
+      default:
+        Serial.print("WARNING: Unexpected scrollWheel direction value ");
+        Serial.print(direction);
+        Serial.print(" on scrollWheel value change; ");
+        Serial.print("scrollCurrentValue:(");
+        Serial.print(scrollCurrentValue);
+        Serial.print("), scrollPriorValue:(");
+        Serial.print(scrollPriorValue);
+        Serial.println(")");
+        break;
+    }
+    scrollPriorValue = scrollCurrentValue;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
